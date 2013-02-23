@@ -24,6 +24,9 @@ from pybloomfilter import BloomFilter
 # - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
 #   entire server might be down, putting url back and putting a long wait time in backq_heap
 # - implement fingerprinting for deduplication?
+# - ***Combine add & log --> this way can avoid situation where queue is emptied then
+#      immediately refilled...?
+# - ***Collisions when adding urls to queue???  What if multiple threads doing this???
 
 
 # NOTE NOTE --> Notes on areas to look for efficiency gain (time and/or space)
@@ -39,10 +42,15 @@ DNS_REFRESH_TIME = 21600  # Refresh DNS every 6 hours
 BASE_PULL_DELAY = 60  # Base time constant to wait for pulling from domain = 60 secs
 
 
-# Bloom filter constants
+# Bloom filter (for seen url lookup) constants
 BF_CAPACITY = 10000000
 BF_ERROR_RATE = 0.001
 BF_FILENAME = 'seen.bloom'
+
+
+# backq maintenance constants
+#MAX_NUMBER_OF_BACKQS = 3*NUM_THREADS
+MAX_QUEUE_SIZE = 10000
 
 
 # url frontier object at a node #[nodeN] of [numNodes]
@@ -52,9 +60,10 @@ BF_FILENAME = 'seen.bloom'
 #  * log(addr, pulled, time_to_pull)
 class urlFrontier:
   
-  def __init__(self, node_n, num_nodes):
+  def __init__(self, node_n, num_nodes, num_threads=1):
     self.node_n = node_n
     self.num_nodes = num_nodes
+    self.num_threads = num_threads
     
     # Priority Queue ~ [ (next_pull_time, addr) ]
     self.backq_heap = Queue.PriorityQueue()
@@ -63,12 +72,17 @@ class urlFrontier:
     self.backq_table = {}
 
     # { url: BOOL }
+    # NOTE: TO-DO: compare versus a python Set
     self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
 
     # { hostname: (addr, time_last_checked) }
     self.DNScache = {}
-  
 
+    # Queue ~ [ (addr, url) ]
+    self.overflow_urls = Queue.Queue()
+
+    # Priority Queue ~ [ (time_to_delete, addr) ]
+  
 
   # primary routine for adding an extracted url to the urlFrontier 
   def add(self, url_in):
@@ -155,14 +169,21 @@ class urlFrontier:
     # else if no back queue entry exists yet
     else:
 
-      # create back queue
-      self.backq_table[addr] = {'last_pulled': None, 'backq': [url]}
+      # limit the number of back queues to 3*NUM_THREADS
+      if len(self.backq_table) <= 3*self.num_threads:
 
-      # add entry to heap
-      self.backq_heap.put((now, addr))
-      print 'Q + (%s, %s)' % (now, addr)
+        # create back queue
+        self.backq_table[addr] = {'last_pulled': None, 'backq': [url]}
 
-    # add to seen dict
+        # add entry to heap
+        self.backq_heap.put((now, addr))
+        print 'Q + (%s, %s)' % (now, addr)
+
+      # else if max number of queues already, divert to url heap
+      else:
+        self.overflow_urls.put((addr, url))
+
+    # add to seen filter
     self.seen.add(url)
     return True
 
@@ -197,9 +218,13 @@ class urlFrontier:
       self.backq_heap.put((next_pull_time, addr))
       print 'Q + (%s, %s)' % (next_pull_time, addr)
 
-    # else if back queue is empty, log time of pull
+    # else handle if back queue is empty
     else:
+      
+      # log the last pulled time so that if a url is added, a time_to_pull can be calculated
       self.backq_table[addr]['last_pulled'] = now
+
+      # add an 'empty queue expiration' entry to a cleanup queue
 
 
 #

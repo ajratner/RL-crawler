@@ -155,7 +155,7 @@ class CrawlThread(threading.Thread):
 def multithread_crawl(n_threads, initial_url_list):
   
   # instantiate one urlFontier object- containing a Queue- for all threads
-  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES)
+  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads)
 
   # initialize the urlFrontier
   for url in initial_url_list:
