@@ -8,7 +8,7 @@ import random
 from util import *
 import Queue
 import re
-
+from pybloomfilter import BloomFilter
 
 
 # NOTE NOTE --> Overall to-do list
@@ -23,21 +23,26 @@ import re
 #   nodes!!  e.g. hello.crecomparex.com and www.crecomparex.com...
 # - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
 #   entire server might be down, putting url back and putting a long wait time in backq_heap
-# - take e.g. '.html' endings off relative paths??  Any issues with doing this?
-
+# - implement fingerprinting for deduplication?
 
 
 # NOTE NOTE --> Notes on areas to look for efficiency gain (time and/or space)
-# - !!!more efficient way of checking if seen??
 # - datetime objects: more efficent way to store this (time.time?)
 # - clean up empty backq objects (queue & associated table entry)?
-
+# - try a Trie structure instead of a Bloom filter for seen lookup?  Or try just a Bloom of
+#   the hostname, followed by a simple list/dict lookup of the relative path? --> NO to this
+#   second idea, might as well just use a dict lookup then...
 
 
 # global time constants
 DNS_REFRESH_TIME = 21600  # Refresh DNS every 6 hours
 BASE_PULL_DELAY = 60  # Base time constant to wait for pulling from domain = 60 secs
 
+
+# Bloom filter constants
+BF_CAPACITY = 10000000
+BF_ERROR_RATE = 0.001
+BF_FILENAME = 'seen.bloom'
 
 
 # url frontier object at a node #[nodeN] of [numNodes]
@@ -58,7 +63,7 @@ class urlFrontier:
     self.backq_table = {}
 
     # { url: BOOL }
-    self.seen = {}
+    self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
 
     # { hostname: (addr, time_last_checked) }
     self.DNScache = {}
@@ -82,9 +87,8 @@ class urlFrontier:
       addr = self.get_log_addr(url_parts.netloc)
       if addr is not None:
 
-        # check to make sure the url has not been seen- if not put in back queue
-        # NOTE: better more efficient way to do this?
-        if not self.seen.has_key(url):
+        # check against Bloom filter to make sure the url has not been seen before
+        if url not in self.seen:
           self.add_to_backq(addr, url)
 
     # else if the extracted link belongs to another node, package to be sent
@@ -159,7 +163,7 @@ class urlFrontier:
       print 'Q + (%s, %s)' % (now, addr)
 
     # add to seen dict
-    self.seen[url] = True
+    self.seen.add(url)
     return True
 
 
