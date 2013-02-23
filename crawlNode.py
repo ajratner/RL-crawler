@@ -3,7 +3,7 @@ import urlparse
 import datetime
 import time
 from util import *
-from urlFontier import urlFrontier
+from urlFrontier import urlFrontier
 import re
 import pycurl
 import cStringIO
@@ -16,6 +16,8 @@ import threading
 # - payload transfer (to db first then in batch to central dispatch node?)
 # - testing function that takes sample of all thread page crawls to form picture of time / 
 #   efficiency, without requiring every single one to print out
+# - crawl for a domain x killed if a bad link in x?  correct this...
+# - make some sort of CHECKS system that checks that all pages expected to be crawled were
 
 
 
@@ -60,6 +62,10 @@ def extract_links(html, ref_url):
       # look for possible netloc form + path - 'xxx.xxx/yyy'
       elif re.search(r'^\w+\.\w+/', url) is not None:
         urls.append('//' + url)
+
+      # look for known throw-away forms
+      elif re.search(r'^mailto:', url) is not None:
+        pass
       
       # NOTE: TO-DO --> run testing, try to think of further catches
       else:
@@ -72,10 +78,12 @@ def extract_links(html, ref_url):
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
 # back to frontier
-def crawl_page(uf):
+def crawl_page(uf, thread_name='Thread-?'):
   
   # get page from urlFrontier
   addr, url, next_pull_time = uf.get()
+
+  print '\n%s got %s from queue' % (thread_name, url)
 
   # construct full addr-based url
   url_parts = list(urlparse.urlsplit(url))
@@ -98,7 +106,9 @@ def crawl_page(uf):
   
   # delay until >= next_pull_time
   wait_time = next_pull_time - datetime.datetime.now()
-  time.sleep(wait_time.seconds + 1)
+  time.sleep(max(0, wait_time.total_seconds()))
+
+  print '\n%s pulling page %s at %s' % (thread_name, url, datetime.datetime.now())
 
   # pull page from web and record pull time
   with Timer() as t:
@@ -107,14 +117,14 @@ def crawl_page(uf):
   # Check for page transfer success (not connection/transfer timeouts are handled by opts)
   if c.getinfo(c.HTTP_CODE) < 400:
 
+    # log page pull as succesful
+    uf.log(addr, True, t.duration)
+
     # parse page for links
     html = basic_html_clean(buf.getvalue())
     for link_url in extract_links(html, url):
       uf.add(link_url)
-
-    # log page pull as succesful
-    # NOTE: log AFTER adds; this should prevent join() from finishing before links added 
-    uf.log(addr, True, t.duration)
+      print '%s adding extracted link %s' % (thread_name, link_url)
 
     # store page for payload transfer
     #NOTE: TO-DO!
@@ -125,13 +135,20 @@ def crawl_page(uf):
 
 # crawl thread class
 class CrawlThread(threading.Thread):
-  def __init__(self, uf)
+  def __init__(self, uf):
     threading.Thread.__init__(self)
     self.uf = uf
 
   def run(self):
     while True:
-      crawl_page(self.uf)
+      try:
+        crawl_page(self.uf, self.getName())
+      except Exception as e:
+        print e
+
+      # if crawl_page gives an exception, still report task done to Queue so join can release
+      self.uf.backq_heap.task_done()
+        
 
 
 # main multi-thread crawl routine
@@ -140,17 +157,34 @@ def multithread_crawl(n_threads, initial_url_list):
   # instantiate one urlFontier object- containing a Queue- for all threads
   uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES)
 
+  # initialize the urlFrontier
+  for url in initial_url_list:
+    uf.add(url)
+
   # spawn a pool of daemon threads
   for i in range(n_threads):
     t = CrawlThread(uf)
     t.setDaemon(True)
     t.start()
 
-  # initialize the urlFrontier
-  for url in initial_url_list:
-    uf.add(url)
-
   # wait on the main queue until everything processed
   uf.backq_heap.join()
 
 
+#
+# --> UNIT TESTS
+#
+
+
+TEST_INITIAL_URLS = ['http://www.crecomparex.com', 'http://www.timberintelligence.com', 'http://www.ndacomptool.net', 'http://www.crecomprex.com', 'http://www.crecomparex.com/blah.html']
+
+#
+# --> Command line functionality
+#
+if __name__ == '__main__':
+  if sys.argv[1] == 'test' and len(sys.argv) == 2:
+    print '\nTesting on %s NODE(S) with 2 THREADS:\n' % (NUMBER_OF_NODES)
+    multithread_crawl(2, TEST_INITIAL_URLS)
+  else:
+    print 'Usage: python crawlNode.py ...'
+    print '(1) test'

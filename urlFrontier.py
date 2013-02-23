@@ -7,18 +7,23 @@ import datetime
 import random
 from util import *
 import Queue
+import re
 
 
 
 # NOTE NOTE --> Overall to-do list
 # - some sort of function to handle transferring e.g. DNS cache data to disk when/if too large
 # - way to send extracted urls that do not belong to this node to other node in periodic packet
-# - need to make sure that access to this object (get/add actions) by crawler threads is SERIAL 
 #   to avoid index muddling/confusion
 # - find out what the server footprint of socket is...
 # - unified error system... read up on pythonic ways of doing this
 # - robots.txt reader / policy system (ask Matt about this...)
 # - what happens if a crawl thread calls 'get' but fails before calling 'log'?
+# - **issue: different netlocs corresponding to same server get hashed out to different
+#   nodes!!  e.g. hello.crecomparex.com and www.crecomparex.com...
+# - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
+#   entire server might be down, putting url back and putting a long wait time in backq_heap
+# - take e.g. '.html' endings off relative paths??  Any issues with doing this?
 
 
 
@@ -61,7 +66,12 @@ class urlFrontier:
 
 
   # primary routine for adding an extracted url to the urlFrontier 
-  def add(self, url):
+  def add(self, url_in):
+    
+    # basic cleaning operations on url
+    url = re.sub(r'/$', '', url_in)
+    
+    # split url into parts
     url_parts = urlparse.urlsplit(url)
     
     # check if url belongs to this node
@@ -70,18 +80,17 @@ class urlFrontier:
 
       # get (and log) url IP address
       addr = self.get_log_addr(url_parts.netloc)
+      if addr is not None:
 
-      # check to make sure the url has not been seen- if not put in back queue
-      # NOTE: better more efficient way to do this?
-      if not self.seen.has_key(url):
-        self.add_to_backq(addr, url)
+        # check to make sure the url has not been seen- if not put in back queue
+        # NOTE: better more efficient way to do this?
+        if not self.seen.has_key(url):
+          self.add_to_backq(addr, url)
 
     # else if the extracted link belongs to another node, package to be sent
     # NOTE: TO-DO... should send in packets periodically to avoid too much inter-node traffic
     else:
       pass
-    return True
-
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -96,29 +105,31 @@ class urlFrontier:
       age = now - created
       if age.seconds > DNS_REFRESH_TIME:
         addr = self.get_addr(hostname)
-        self.DNScache[hostname] = (addr, now)
+        if addr is not None:
+          self.DNScache[hostname] = (addr, now)
+        else:
+          del self.DNScache[hostname]
     else:
       addr = self.get_addr(hostname)
-      self.DNScache[hostname] = (addr, now)
+      if addr is not None:
+        self.DNScache[hostname] = (addr, now)
     return addr
   
-
 
   # sub-subfunction for getting IP address from socket
   def get_addr(self, hostname):
     try:
       addr_info = socket.getaddrinfo(hostname, None)
     except Exception as e:
-      print 'DNS Error!'
-      return False
+      print 'DNS Error accessing ' + hostname
+      return None
 
     # ensure result is non-null
     if len(addr_info) > 0:
       return addr_info[0][4][0]
     else:
-      print 'DNS Error- null returned!'
-      return False
-
+      print 'DNS Error, null returned for ' + hostname
+      return None
 
 
   # subfunction for inserting unseen, un-queued url into back queue
@@ -128,12 +139,13 @@ class urlFrontier:
     # check to see if a queue for the ip address exists yet
     if self.backq_table.has_key(addr):
 
-      # check if queue is empty: if so, add to queue & also push new entry to heap
+      # check if queue is empty: if so push new entry to heap
       if len(self.backq_table[addr]['backq']) == 0:
         next_pull_time = self.backq_table[addr]['last_pulled'] + datetime.timedelta(0, BASE_PULL_DELAY + random.random()*60)
         self.backq_heap.put((next_pull_time, addr))
+        print 'Q + (%s, %s)' % (next_pull_time, addr)
 
-      # add to appropriate back queue
+      # now add full url to appropriate back queue
       self.backq_table[addr]['backq'].append(url)
 
     # else if no back queue entry exists yet
@@ -142,28 +154,24 @@ class urlFrontier:
       # create back queue
       self.backq_table[addr] = {'last_pulled': None, 'backq': [url]}
 
-      # add to heap
+      # add entry to heap
       self.backq_heap.put((now, addr))
+      print 'Q + (%s, %s)' % (now, addr)
 
     # add to seen dict
     self.seen[url] = True
     return True
 
 
-
   # primary routine for requesting a url to crawl/parse
   def get(self):
-    if self.backq_heap.qsize() > 0:
 
-      # pop back queue heap
-      next_pull_time, addr = self.backq_heap.get()
+    # pop back queue heap- note no timeout, should be handled by Queue/join
+    next_pull_time, addr = self.backq_heap.get()
 
-      # pop back queue
-      url = self.backq_table[addr]['backq'].pop()
-      return (addr, url, next_pull_time)
-    else:
-      return (None, None, None)
-  
+    # pop back queue
+    url = self.backq_table[addr]['backq'].pop()
+    return (addr, url, next_pull_time)
 
 
   # primary routine for logging that a url was successfully (or not) crawled
@@ -172,29 +180,26 @@ class urlFrontier:
     
     # handle case where page was pulled succesfully
     if pulled:
+      next_pull_time = now + datetime.timedelta(0, 10*time_to_pull + 2*random.random()*BASE_PULL_DELAY)
 
-      # log task done to Queue, to keep proper count for resume post blocking-join() call
-      self.backq_heap.task_done()
-
-      # if there are still entries in the back queue, add entry to heap
-      if len(self.backq_table[addr]['backq']) > 0:
-        next_pull_time = now + datetime.timedelta(0, 10*time_to_pull + random.random()*BASE_PULL_DELAY)
-        self.backq_heap.put((next_pull_time, addr)) 
-
-      # else if back queue is empty, log time of pull
-      else:
-        self.backq_table[addr]['last_pulled'] = now
-
-    # handle case where there was a problem pulling the page
-    # NOTE: TO-DO!
+    # handle case where there was a problem pulling the page- use default delay
     else:
-      pass
-    return True
+      next_pull_time = now + datetime.timedelta(0, BASE_PULL_DELAY + random.random()*60)
 
+      # NOTE: TO-DO: do something about page re-try / server down detection!
+
+    # if there are still entries in the back queue, add entry to heap
+    if len(self.backq_table[addr]['backq']) > 0:
+      self.backq_heap.put((next_pull_time, addr))
+      print 'Q + (%s, %s)' % (next_pull_time, addr)
+
+    # else if back queue is empty, log time of pull
+    else:
+      self.backq_table[addr]['last_pulled'] = now
 
 
 #
-# --> TESTING UNIT
+# --> UNIT TESTS
 #
 
 def full_test():
