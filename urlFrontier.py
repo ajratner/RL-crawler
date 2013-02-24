@@ -11,32 +11,6 @@ import re
 from pybloomfilter import BloomFilter
 
 
-# NOTE NOTE --> Overall to-do list
-# - some sort of function to handle transferring e.g. DNS cache data to disk when/if too large
-# - way to send extracted urls that do not belong to this node to other node in periodic packet
-#   to avoid index muddling/confusion
-# - find out what the server footprint of socket is...
-# - unified error system... read up on pythonic ways of doing this
-# - robots.txt reader / policy system (ask Matt about this...)
-# - what happens if a crawl thread calls 'get' but fails before calling 'log'?
-# - **issue: different netlocs corresponding to same server get hashed out to different
-#   nodes!!  e.g. hello.crecomparex.com and www.crecomparex.com...
-# - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
-#   entire server might be down, putting url back and putting a long wait time in backq_heap
-# - implement fingerprinting for deduplication?
-# - ***Combine add & log --> this way can avoid situation where queue is emptied then
-#      immediately refilled...?
-# - ***Collisions when adding urls to queue???  What if multiple threads doing this???
-
-
-# NOTE NOTE --> Notes on areas to look for efficiency gain (time and/or space)
-# - datetime objects: more efficent way to store this (time.time?)
-# - clean up empty backq objects (queue & associated table entry)?
-# - try a Trie structure instead of a Bloom filter for seen lookup?  Or try just a Bloom of
-#   the hostname, followed by a simple list/dict lookup of the relative path? --> NO to this
-#   second idea, might as well just use a dict lookup then...
-
-
 # global time constants
 DNS_REFRESH_TIME = 21600  # Refresh DNS every 6 hours
 BASE_PULL_DELAY = 60  # Base time constant to wait for pulling from domain = 60 secs
@@ -49,15 +23,23 @@ BF_FILENAME = 'seen.bloom'
 
 
 # backq maintenance constants
-#MAX_NUMBER_OF_BACKQS = 3*NUM_THREADS
+HQ_TO_THREAD_RATIO = 3
 MAX_QUEUE_SIZE = 10000
 
 
 # url frontier object at a node #[nodeN] of [numNodes]
-# primary interface methods for a crawl thread are:
-#  * add(url)
-#  * get() --> addr, url, next_pull_time
-#  * log(addr, pulled, time_to_pull)
+#
+# Primary external routines:
+#
+# - For CrawlThread:
+#   *  get_crawl_task()
+#   *  log_and_add_extracted(host_addr, success, time_taken, urls)
+#
+# - For MaintenanceThread:
+#   *  clean_and_fill()
+#
+# - initialize(urls)
+
 class urlFrontier:
   
   def __init__(self, node_n, num_nodes, num_threads=1):
@@ -65,54 +47,104 @@ class urlFrontier:
     self.num_nodes = num_nodes
     self.num_threads = num_threads
     
-    # Priority Queue ~ [ (next_pull_time, addr) ]
-    self.backq_heap = Queue.PriorityQueue()
+    # crawl task Queue
+    # Priority Queue ~ [ (next_pull_time, addr, url) ]
+    self.Q_crawl_tasks = Queue.PriorityQueue()
 
-    # { addr: { 'last_pulled': time_last_pulled, 'backq': [url, ...] }
-    self.backq_table = {}
-
-    # { url: BOOL }
-    # NOTE: TO-DO: compare versus a python Set
+    # host queue dict
+    # { host_addr: [url, ...] }
+    self.hqs = {}
+    
+    # seen url check
+    # Bloom Filter ~ [ url ]
     self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
 
-    # { hostname: (addr, time_last_checked) }
+    # DNS Cache
+    # { netloc: (host_addr, time_last_checked) }
     self.DNScache = {}
 
-    # Queue ~ [ (addr, url) ]
-    self.overflow_urls = Queue.Queue()
+    # overflow url Queue
+    # Queue ~ [ (host_addr, url) ]
+    self.Q_overflow_urls = Queue.Queue()
 
-    # Priority Queue ~ [ (time_to_delete, addr) ]
+    # host queue cleanup Queue
+    # Priority Queue ~ [ (time_to_delete, host_addr) ]
+    self.Q_hq_cleanup = Queue.PriorityQueue()
   
 
-  # primary routine for adding an extracted url to the urlFrontier 
-  def add(self, url_in):
-    
-    # basic cleaning operations on url
-    url = re.sub(r'/$', '', url_in)
-    
-    # split url into parts
-    url_parts = urlparse.urlsplit(url)
-    
-    # check if url belongs to this node
-    url_node = hash(url_parts.netloc) % self.num_nodes
-    if url_node == self.node_n:
+  # primary routine for getting a crawl task from queue
+  def get_crawl_task(self):
+    return self.Q_crawl_tasks.get()
+  
 
-      # get (and log) url IP address
-      addr = self.get_log_addr(url_parts.netloc)
-      if addr is not None:
+  # primary routine to log crawl task done & submit extracted urls
+  def log_and_add_extracted(self, host_addr, success, time_taken=0, urls=[]):
 
-        # check against Bloom filter to make sure the url has not been seen before
-        if url not in self.seen:
-          self.add_to_backq(addr, url)
+    # add urls to either hq of host_addr or else overflow queue
+    for url in urls:
 
-    # else if the extracted link belongs to another node, package to be sent
-    # NOTE: TO-DO... should send in packets periodically to avoid too much inter-node traffic
-    else:
+      # check to make sure url has not been seen
+      if url not in self.seen:
+        self._add_url(host_addr, url)
+
+    # handle failure of page pull
+    # NOTE: TO-DO!
+    if not success:
       pass
+
+    # calculate time delay based on success
+    now = datetime.datetime.now()
+    r = random.random()
+    td = 10*time_to_pull + r*BASE_PULL_DELAY if success else (1 + r)*BASE_PULL_DELAY
+    next_time = now + datetime.timedelta(0, td)
+
+    # if the hq of host_addr is not empty, enter new task in crawl task queue
+    if len(self.hqs[host_addr]) > 0:
+
+      # add task to crawl task queue
+      self.Q_crawl_tasks.put((next_time, host_addr, self.hqs[host_addr].pop()))
+
+    # else if empty, add task to cleanup queue
+    else:
+      self.Q_hq_cleanup.put((next_time, host_addr))
+    
+    # report crawl task done to queue
+    self.Q_crawl_tasks.task_done()
+
+
+  # subroutine to add a url extracted from a host_addr
+  def _add_url(self, ref_host_addr, url_in):
+  
+    # basic cleaning operations on url
+    # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
+    url = re.sub(r'/$', '', url_in)
+
+    # get host IP address of url
+    url_parts = urlparse.urlsplit(url)
+    host_addr = self._get_and_log_addr(url_parts.netloc)
+
+    # if this is an internal link, send directly to the serving hq
+    # NOTE: need to check that equality operator is sufficient here!
+    if host_addr == ref_host_addr:
+      self.hqs[host_addr].append(url)
+    
+    else:
+      
+      # check if this address belongs to this node
+      url_node = hash(host_addr) % self.num_nodes
+      if url_node == self.node_n:
+
+        # add to overflow queue
+        self.Q_overflow_urls.put((host_addr, url))
+
+      # else pass along to appropriate node
+      # NOTE: TO-DO!
+      else:
+        pass
 
 
   # subfunction for getting IP address either from DNS cache or web
-  def get_log_addr(self, hostname):
+  def _get_and_log_addr(self, hostname):
     
     # try looking up hostname in DNScache
     now = datetime.datetime.now()
@@ -122,20 +154,20 @@ class urlFrontier:
       addr, created = self.DNScache[hostname]
       age = now - created
       if age.seconds > DNS_REFRESH_TIME:
-        addr = self.get_addr(hostname)
+        addr = self._get_addr(hostname)
         if addr is not None:
           self.DNScache[hostname] = (addr, now)
         else:
           del self.DNScache[hostname]
     else:
-      addr = self.get_addr(hostname)
+      addr = self._get_addr(hostname)
       if addr is not None:
         self.DNScache[hostname] = (addr, now)
     return addr
   
 
   # sub-subfunction for getting IP address from socket
-  def get_addr(self, hostname):
+  def _get_addr(self, hostname):
     try:
       addr_info = socket.getaddrinfo(hostname, None)
     except Exception as e:
@@ -150,180 +182,45 @@ class urlFrontier:
       return None
 
 
-  # subfunction for inserting unseen, un-queued url into back queue
-  def add_to_backq(self, addr, url):
-    now = datetime.datetime.now()
-
-    # check to see if a queue for the ip address exists yet
-    if self.backq_table.has_key(addr):
-
-      # check if queue is empty: if so push new entry to heap
-      if len(self.backq_table[addr]['backq']) == 0:
-        next_pull_time = self.backq_table[addr]['last_pulled'] + datetime.timedelta(0, BASE_PULL_DELAY + random.random()*60)
-        self.backq_heap.put((next_pull_time, addr))
-        print 'Q + (%s, %s)' % (next_pull_time, addr)
-
-      # now add full url to appropriate back queue
-      self.backq_table[addr]['backq'].append(url)
-
-    # else if no back queue entry exists yet
-    else:
-
-      # limit the number of back queues to 3*NUM_THREADS
-      if len(self.backq_table) <= 3*self.num_threads:
-
-        # create back queue
-        self.backq_table[addr] = {'last_pulled': None, 'backq': [url]}
-
-        # add entry to heap
-        self.backq_heap.put((now, addr))
-        print 'Q + (%s, %s)' % (now, addr)
-
-      # else if max number of queues already, divert to url heap
-      else:
-        self.overflow_urls.put((addr, url))
-
-    # add to seen filter
-    self.seen.add(url)
-    return True
-
-
-  # primary routine for requesting a url to crawl/parse
-  def get(self):
-
-    # pop back queue heap- note no timeout, should be handled by Queue/join
-    next_pull_time, addr = self.backq_heap.get()
-
-    # pop back queue
-    url = self.backq_table[addr]['backq'].pop()
-    return (addr, url, next_pull_time)
-
-
-  # primary routine for logging that a url was successfully (or not) crawled
-  def log(self, addr, pulled, time_to_pull=0):
-    now = datetime.datetime.now()
+  # primary maintenance routine- clear one old queue and replace with a new one from overflow
+  # NOTE: this assumes constant number of existing queues is always present
+  def clean_and_fill(self):
     
-    # handle case where page was pulled succesfully
-    if pulled:
-      next_pull_time = now + datetime.timedelta(0, 10*time_to_pull + 2*random.random()*BASE_PULL_DELAY)
+    # get queue to delete & time to delete at
+    time_to_delete, host_addr = self.Q_hq_cleanup.get()
 
-    # handle case where there was a problem pulling the page- use default delay
-    else:
-      next_pull_time = now + datetime.timedelta(0, BASE_PULL_DELAY + random.random()*60)
+    # wait to delete
+    wait_time = time_to_delete - datetime.datetime.now()
+    time.sleep(max(0, wait_time.total_seconds()))
 
-      # NOTE: TO-DO: do something about page re-try / server down detection!
+    # delete queue and add new one
+    del self.hqs[host_addr]
+    self._overflow_to_new_hq()
 
-    # if there are still entries in the back queue, add entry to heap
-    if len(self.backq_table[addr]['backq']) > 0:
-      self.backq_heap.put((next_pull_time, addr))
-      print 'Q + (%s, %s)' % (next_pull_time, addr)
 
-    # else handle if back queue is empty
+  # subroutine for transferring urls from overflow queue to new hq
+  def _overflow_to_new_hq(self):
+    host_addr, url = self.Q_overflow_urls.get()
+    
+    # if hq already exists, recycle- insertion not thread safe
+    # NOTE: better way to do this while ensuring thread safety here?
+    if self.hqs.has_key(host_addr):
+      self.Q_overflow_urls.put((host_addr, url))
     else:
       
-      # log the last pulled time so that if a url is added, a time_to_pull can be calculated
-      self.backq_table[addr]['last_pulled'] = now
+      # create new empty hq and send seed url to crawl task queue
+      self.hqs[host_addr] = []
+      self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url))
 
-      # add an 'empty queue expiration' entry to a cleanup queue
-
-
-#
-# --> UNIT TESTS
-#
-
-def full_test():
-  print '\nTesting full url frontier system for single node...'
-  uf = urlFrontier(0, 1)
-
-  # test DNS get / cache subfunctions (get_log_addr, get_addr)
-  print '\n(I) Testing DNS get/cache:'
-  print '\n(1) uf.get_log_addr("www.crecomparex.com")'
-  print datetime.datetime.now()
-  with Timer() as t:
-    addr = uf.get_log_addr("www.crecomparex.com")
-  print 'IP address retrieved as ' + str(addr) + ' in ' + str(t.duration) + ' secs.'
-  print 'IP address cached as ' + uf.DNScache['www.crecomparex.com'][0]
-  print '\n(2) uf.get_log_addr("www.crecomparex.com")'
-  print datetime.datetime.now()
-  with Timer() as t:
-    addr = uf.get_log_addr("www.crecomparex.com")
-  print '2nd attempt: IP address retrieved as '+str(addr)+' in ' + str(t.duration) + ' secs.'
-
-  # test add overall function (add, add_to_backq)
-  print '\n(II) Testing overall add functionality:'
-  test_add(uf, 'http://www.crecomparex.com')
-  test_add(uf, 'http://www.crecomparex.com')
-  test_add(uf, 'http://www.crecomparex.com/about.php')
-  test_add(uf, 'http://www.crecomparex.com/terms.php')
-
-  # test get / log overall function (get, log)
-  print '\n(III) Testing overall get / log functionality:'
-  for i in range(4):
-    test_get_and_log(uf)
-
-  # test add again after queue emptied
-  print '\n(IV) Testing add to emptied queue'
-  test_add(uf, 'http://www.crecomparex.com/contact.php')
-
-  print '\n'
-
-
-
-def test_add(uf, url):
-  
-  # add
-  print '\n(*) uf.add("' + url + '")'
-  print datetime.datetime.now()
-  with Timer() as t:
-    uf.add(url)
-  print 'Completed in ' + str(t.duration) + ' secs' 
-  print 'Printing backq_table:'
-  print uf.backq_table
-  print 'Printing backq_heap:'
-  print uf.backq_heap
-
-
-
-def test_get_and_log(uf):
-  
-  # get
-  print '\n(*) uf.get()'
-  print datetime.datetime.now()
-  with Timer() as t:
-    addr, url, next_get_time = uf.get()
-  if addr is not None:
-    print 'Got ' + addr + ', '+url+', '+str(next_get_time)+' in ' + str(t.duration) + ' secs' 
-    print 'Printing backq_table:'
-    print uf.backq_table
-    print 'Printing backq_heap:'
-    print uf.backq_heap
-
-    # log
-    print '\n(*) uf.log(addr, pulled, time_to_pull)'
-    print datetime.datetime.now()
-    with Timer() as t:
-      uf.log(addr, True, random.random()*1.0)
-    print 'Completed in ' + str(t.duration) + ' secs' 
-    print 'Printing backq_table:'
-    print uf.backq_table
-    print 'Printing backq_heap:'
-    print uf.backq_heap
-  else:
-    print 'None returned'
-    print '\n(*) uf.log(None, False)'
-    print datetime.datetime.now()
-    with Timer() as t:
-      uf.log(None, False)
-    print 'Completed in ' + str(t.duration) + ' secs'
 
 
 
 #
 # --> Command line functionality
 #
-if __name__ == '__main__':
-  if sys.argv[1] == 'test' and len(sys.argv) == 2:
-    full_test()
-  else:
-    print 'Usage: python urlFrontier.py ...'
-    print '(1) test'
+#if __name__ == '__main__':
+#  if sys.argv[1] == 'test' and len(sys.argv) == 2:
+#    full_test()
+#  else:
+#    print 'Usage: python urlFrontier.py ...'
+#    print '(1) test'

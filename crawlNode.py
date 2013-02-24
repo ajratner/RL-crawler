@@ -10,17 +10,6 @@ import cStringIO
 import threading
 
 
-
-# NOTE NOTE --> Overall to-do list
-# - initial seeding function
-# - payload transfer (to db first then in batch to central dispatch node?)
-# - testing function that takes sample of all thread page crawls to form picture of time / 
-#   efficiency, without requiring every single one to print out
-# - crawl for a domain x killed if a bad link in x?  correct this...
-# - make some sort of CHECKS system that checks that all pages expected to be crawled were
-
-
-
 # global constants
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 CURLOPT_TIMEOUT = 60
