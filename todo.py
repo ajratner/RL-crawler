@@ -12,14 +12,10 @@
 # - unified error system... read up on pythonic ways of doing this
 # - robots.txt reader / policy system (ask Matt about this...)
 # - what happens if a crawl thread calls 'get' but fails before calling 'log'?
-# - **issue: different netlocs corresponding to same server get hashed out to different
-#   nodes!!  e.g. hello.crecomparex.com and www.crecomparex.com...
 # - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
 #   entire server might be down, putting url back and putting a long wait time in backq_heap
 # - implement fingerprinting for deduplication?
-# - ***Combine add & log --> this way can avoid situation where queue is emptied then
-#      immediately refilled...?
-# - ***Collisions when adding urls to queue???  What if multiple threads doing this???
+# - try using http://publicsuffix.org/list/?
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK
@@ -30,6 +26,7 @@
 #   second idea, might as well just use a dict lookup then...
 # - compare performance of Bloom filter versus a python Set
 # - ***upgrade DNS cache (currently a dict)?
+# - ***CHECK OUT EVENT-BASED I/O PROGRAMMING i.e. http://docs.celeryproject.org/en/latest/userguide/concurrency/eventlet.html or http://www.gevent.org/
 
 
 # NOTE --> useful links

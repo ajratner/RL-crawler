@@ -38,7 +38,8 @@ MAX_QUEUE_SIZE = 10000
 # - For MaintenanceThread:
 #   *  clean_and_fill()
 #
-# - initialize(urls)
+# - For initialization (sole) thread:
+#   *  initialize(urls)
 
 class urlFrontier:
   
@@ -82,10 +83,7 @@ class urlFrontier:
 
     # add urls to either hq of host_addr or else overflow queue
     for url in urls:
-
-      # check to make sure url has not been seen
-      if url not in self.seen:
-        self._add_url(host_addr, url)
+      self._add_extracted_url(host_addr, url)
 
     # handle failure of page pull
     # NOTE: TO-DO!
@@ -113,34 +111,43 @@ class urlFrontier:
 
 
   # subroutine to add a url extracted from a host_addr
-  def _add_url(self, ref_host_addr, url_in):
+  def _add_extracted_url(self, ref_host_addr, url_in):
   
     # basic cleaning operations on url
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
     url = re.sub(r'/$', '', url_in)
 
-    # get host IP address of url
-    url_parts = urlparse.urlsplit(url)
-    host_addr = self._get_and_log_addr(url_parts.netloc)
+    # check if url already seen
+    if url not in self.seen:
 
-    # if this is an internal link, send directly to the serving hq
-    # NOTE: need to check that equality operator is sufficient here!
-    if host_addr == ref_host_addr:
-      self.hqs[host_addr].append(url)
-    
-    else:
+      # get host IP address of url
+      url_parts = urlparse.urlsplit(url)
+      host_addr = self._get_and_log_addr(url_parts.netloc)
+
+      # if this is an internal link, send directly to the serving hq
+      # NOTE: need to check that equality operator is sufficient here!
+      if host_addr == ref_host_addr:
+        self.hqs[host_addr].append(url)
+
+        # log as seen
+        self.seen.add(url)
       
-      # check if this address belongs to this node
-      url_node = hash(host_addr) % self.num_nodes
-      if url_node == self.node_n:
-
-        # add to overflow queue
-        self.Q_overflow_urls.put((host_addr, url))
-
-      # else pass along to appropriate node
-      # NOTE: TO-DO!
       else:
-        pass
+        
+        # check if this address belongs to this node
+        url_node = hash(host_addr) % self.num_nodes
+        if url_node == self.node_n:
+
+          # add to overflow queue
+          self.Q_overflow_urls.put((host_addr, url))
+
+          # log as seen
+          self.seen.add(url)
+
+        # else pass along to appropriate node
+        # NOTE: TO-DO!
+        else:
+          pass
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -211,6 +218,69 @@ class urlFrontier:
       # create new empty hq and send seed url to crawl task queue
       self.hqs[host_addr] = []
       self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url))
+  
+
+  # primary routine for initialization of url frontier / hqs
+  # NOTE: !!! Assumed that this is sole thread running when executed, prior to crawl start
+  def initialize(self, urls=[]):
+    now = datetime.datetime.now()
+    
+    # initialize all hqs as either full & tasked or empty & to be deleted
+    i = 0
+    while len(self.hqs) < HQ_TO_THREAD_RATIO*self.num_threads:
+      i += 1
+      
+      # expend all given urls
+      if len(urls) > 0:
+        self._init_add_url(urls.pop())
+
+      # else add empty queues and mark to be cleared & replaced
+      else:
+        self.hqs[i] = []
+        self.Q_hq_cleanup.put((now, i))
+
+    # if there are urls left over, add to appropriate queues
+    for url in urls:
+      self._init_add_url(url)
+
+  
+  # subroutine for adding url to hq, assuming only one thread running (initialization)
+  def _init_add_url(self, url_in):
+
+    # basic cleaning operations on url
+    url = re.sub(r'/$', '', url_in)
+
+    # check if seen
+    if url not in self.seen:
+
+      # get host IP address of url
+      url_parts = urlparse.urlsplit(url)
+      host_addr = self._get_and_log_addr(url_parts.netloc)
+
+      # check if this address belongs to this node
+      url_node = hash(host_addr) % self.num_nodes
+      if url_node == self.node_n:
+
+        # log as seen
+        self.seen.add(url)
+
+        # add to an existing hq, or create new one & log new crawl task
+        if self.hqs.has_key(host_addr):
+          self.hqs[host_addr].append(url)
+        else:
+          self.hqs[host_addr] = []
+          self.Q_crawl_tasks.put((now, host_addr, url))
+
+      # else pass along to appropriate node
+      # NOTE: TO-DO!
+      else:
+        pass
+        
+        
+
+
+  # !!!NOTE NOTE How to do a join and make sure that program is blocked till all Qs empty??
+  # --> while loop?  while Q_crawl_tasks & Q_overflow_urls both non-empty... wait...?
 
 
 
