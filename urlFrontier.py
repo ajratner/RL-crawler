@@ -49,7 +49,7 @@ class urlFrontier:
     self.num_threads = num_threads
     
     # crawl task Queue
-    # Priority Queue ~ [ (next_pull_time, addr, url) ]
+    # Priority Queue ~ [ (next_pull_time, host_addr, url) ]
     self.Q_crawl_tasks = Queue.PriorityQueue()
 
     # host queue dict
@@ -71,6 +71,10 @@ class urlFrontier:
     # host queue cleanup Queue
     # Priority Queue ~ [ (time_to_delete, host_addr) ]
     self.Q_hq_cleanup = Queue.PriorityQueue()
+
+    # active url count queue
+    # Queue ~ [ True ]
+    self.Q_active_count = Queue.Queue()
   
 
   # primary routine for getting a crawl task from queue
@@ -106,8 +110,9 @@ class urlFrontier:
     else:
       self.Q_hq_cleanup.put((next_time, host_addr))
     
-    # report crawl task done to queue
+    # report crawl task done to queue, subtract one from active count
     self.Q_crawl_tasks.task_done()
+    self.Q_active_count.task_done()
 
 
   # subroutine to add a url extracted from a host_addr
@@ -129,8 +134,9 @@ class urlFrontier:
       if host_addr == ref_host_addr:
         self.hqs[host_addr].append(url)
 
-        # log as seen
+        # !log as seen & add to active count
         self.seen.add(url)
+        self.Q_active_count.put(True)
       
       else:
         
@@ -141,8 +147,9 @@ class urlFrontier:
           # add to overflow queue
           self.Q_overflow_urls.put((host_addr, url))
 
-          # log as seen
+          # !log as seen & add to active count
           self.seen.add(url)
+          self.Q_active_count.put(True)
 
         # else pass along to appropriate node
         # NOTE: TO-DO!
@@ -204,6 +211,10 @@ class urlFrontier:
     del self.hqs[host_addr]
     self._overflow_to_new_hq()
 
+    # log task done to both queues
+    self.Q_hq_cleanup.task_done()
+    self.Q_overflow_urls.task_done()
+
 
   # subroutine for transferring urls from overflow queue to new hq
   def _overflow_to_new_hq(self):
@@ -234,6 +245,9 @@ class urlFrontier:
       if len(urls) > 0:
         self._init_add_url(urls.pop())
 
+        # !increment active count
+        self.Q_active_count.put(True)
+
       # else add empty queues and mark to be cleared & replaced
       else:
         self.hqs[i] = []
@@ -261,8 +275,9 @@ class urlFrontier:
       url_node = hash(host_addr) % self.num_nodes
       if url_node == self.node_n:
 
-        # log as seen
+        # !log as seen & add to active count
         self.seen.add(url)
+        self.Q_active_count.put(True)
 
         # add to an existing hq, or create new one & log new crawl task
         if self.hqs.has_key(host_addr):

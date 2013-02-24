@@ -70,14 +70,15 @@ def extract_links(html, ref_url):
 def crawl_page(uf, thread_name='Thread-?'):
   
   # get page from urlFrontier
-  addr, url, next_pull_time = uf.get()
+  next_pull_time, host_addr, url = uf.get_crawl_task()
 
+  # FOR TESTING
   print '\n%s got %s from queue' % (thread_name, url)
 
   # construct full addr-based url
   url_parts = list(urlparse.urlsplit(url))
   root_url = url_parts[1]
-  url_parts[1] = addr
+  url_parts[1] = host_addr
   url_addr = urlparse.urlunsplit(url_parts)
 
   # pull page with pyCurl
@@ -106,17 +107,15 @@ def crawl_page(uf, thread_name='Thread-?'):
   # Check for page transfer success (not connection/transfer timeouts are handled by opts)
   if c.getinfo(c.HTTP_CODE) < 400:
 
-    # log page pull as succesful
-    uf.log(addr, True, t.duration)
-
     # parse page for links
     html = basic_html_clean(buf.getvalue())
-    for link_url in extract_links(html, url):
-      uf.add(link_url)
-      print '%s adding extracted link %s' % (thread_name, link_url)
+    extracted_urls =  extract_links(html, url)
 
     # store page for payload transfer
     #NOTE: TO-DO!
+
+    # log page pull as successful & submit extracted urls
+    uf.log_and_add_extracted(host_addr, True, t.duration, extracted_urls)
 
   else:
     uf.log(addr, False)
@@ -132,32 +131,55 @@ class CrawlThread(threading.Thread):
     while True:
       try:
         crawl_page(self.uf, self.getName())
+
+      # in case of exception, log task done to crawl task & active count queues to un-block
       except Exception as e:
         print e
+        self.uf.Q_crawl_tasks.task_done()
+        self.uf.Q_active_count.task_done()
 
-      # if crawl_page gives an exception, still report task done to Queue so join can release
-      self.uf.backq_heap.task_done()
-        
+
+# maintenance thread class
+class MaintenanceThread(threading.Thread):
+  def __init__(self, uf):
+    threading.Thread.__init__(self)
+    self.uf = uf
+
+  def run(self):
+    while True:
+      try:
+        self.uf.clean_and_fill()
+
+      # in case of exception, log tasks done to overflow & cleanup queues to un-block
+      except Exception as e:
+        print e
+        self.uf.Q_overflow_urls.task_done()
+        self.uf.Q_hq_cleanup.task_done()
 
 
 # main multi-thread crawl routine
-def multithread_crawl(n_threads, initial_url_list):
+def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   
   # instantiate one urlFontier object- containing a Queue- for all threads
   uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads)
 
   # initialize the urlFrontier
-  for url in initial_url_list:
-    uf.add(url)
+  uf.initialize(initial_url_list)
 
-  # spawn a pool of daemon threads
+  # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):
     t = CrawlThread(uf)
     t.setDaemon(True)
     t.start()
 
-  # wait on the main queue until everything processed
-  uf.backq_heap.join()
+  # spawn a pool of daemon MaintenanceThread threads
+  for i in range(n_mthreads):
+    t = MaintenanceThread(uf)
+    t.setDaemon(True)
+    t.start()
+
+  # wait on the active count queue until every extracted or provided url is crawled
+  uf.Q_active_count.join()
 
 
 #
@@ -172,8 +194,8 @@ TEST_INITIAL_URLS = ['http://www.crecomparex.com', 'http://www.timberintelligenc
 #
 if __name__ == '__main__':
   if sys.argv[1] == 'test' and len(sys.argv) == 2:
-    print '\nTesting on %s NODE(S) with 2 THREADS:\n' % (NUMBER_OF_NODES)
-    multithread_crawl(2, TEST_INITIAL_URLS)
+    print '\nTesting on %s NODE(S) with 2 C THREADS & 2 M THREADS:\n' % (NUMBER_OF_NODES)
+    multithread_crawl(2, 2, TEST_INITIAL_URLS)
   else:
     print 'Usage: python crawlNode.py ...'
     print '(1) test'
