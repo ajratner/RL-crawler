@@ -209,7 +209,9 @@ class urlFrontier:
 
     # delete queue and add new one
     del self.hqs[host_addr]
-    self._overflow_to_new_hq()
+    added = False
+    while !added:
+      added = self._overflow_to_new_hq()
 
     # log task done to both queues
     self.Q_hq_cleanup.task_done()
@@ -223,12 +225,15 @@ class urlFrontier:
     # if hq already exists, recycle- insertion not thread safe
     # NOTE: better way to do this while ensuring thread safety here?
     if self.hqs.has_key(host_addr):
+      self.Q_overflow_urls.task_done()
       self.Q_overflow_urls.put((host_addr, url))
+      return False
     else:
       
       # create new empty hq and send seed url to crawl task queue
       self.hqs[host_addr] = []
       self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url))
+      return True
   
 
   # primary routine for initialization of url frontier / hqs
