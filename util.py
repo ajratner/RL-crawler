@@ -23,19 +23,43 @@ class Timer:
 # simple multi-thread safe data funnel class:
 # instantiates Queue.Queue() which collects items from threads, and then transfers them out
 # will also report task done to global queue if one is passed in
-#class PostmanThread(threading.Thread):
-#  def __init__(self, Q_out, db_vars):
-
-class Q_out_db:
-  def __init__(self, db_vars, db_type='mysql', close_report_Q=None):
+class PostmanThread(threading.Thread):
+  def __init__(self, Q_out, db_vars, db_table_name, Q_task_done=None):
+    threading.Thread.__init__(self)
+    self.Q_out = Q_out
     self.db_vars = db_vars
-    self.db_type = db_type
-    self.close_report_Q = close_report_Q
+    self.db_table_name = db_table_name
+    self.Q_task_done = Q_task_done
+
+  
+  def run(self):
+    with DB_connection(self.db_vars) as handle:
+      while True:
+        
+        # get item from queue, item must be row_dict
+        mail_dict = self.Q_out.get()
+
+        # insert row into db
+        insert_row_dict(handle, self.db_table_name, mail_dict)
+
+        # report item out success to master joining queue if applicable
+        if self.Q_task_done is not None:
+          self.Q_task_done.task_done()
+    
+
+class Q_out_to_db:
+  def __init__(self, db_vars, db_table_name, Q_task_done=None):
+    self.db_vars = db_vars
+    self.db_table_name = db_table_name
+    self.Q_task_done = Q_task_done
 
     # the queue of packages to be sent out
     self.Q_out = Queue.Queue()
 
-    # start the worker thread
+    # start the 'postman' worker thread
+    t = PostmanThread(self.Q_out, self.db_vars, self.db_table_name, self.Q_task_done)
+    t.setDaemon(True)
+    t.start()
 
 
 
