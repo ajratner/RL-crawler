@@ -16,6 +16,8 @@
 #   entire server might be down, putting url back and putting a long wait time in backq_heap
 # - implement fingerprinting for deduplication?
 # - try using http://publicsuffix.org/list/?
+# - ***handle other doc types e.g. pdfs
+#  -***How to preserve domain link structure for relative parent/child calcs?
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK

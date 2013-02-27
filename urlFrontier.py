@@ -49,11 +49,11 @@ class urlFrontier:
     self.num_threads = num_threads
     
     # crawl task Queue
-    # Priority Queue ~ [ (next_pull_time, host_addr, url) ]
+    # Priority Queue ~ [ (next_pull_time, host_addr, url, ref_page_stats) ]
     self.Q_crawl_tasks = Queue.PriorityQueue()
 
     # host queue dict
-    # { host_addr: [url, ...] }
+    # { host_addr: [(url, ref_page_stats), ...] }
     self.hqs = {}
     
     # seen url check
@@ -65,7 +65,7 @@ class urlFrontier:
     self.DNScache = {}
 
     # overflow url Queue
-    # Queue ~ [ (host_addr, url) ]
+    # Queue ~ [ (host_addr, url, ref_page_stats) ]
     self.Q_overflow_urls = Queue.Queue()
 
     # host queue cleanup Queue
@@ -83,11 +83,11 @@ class urlFrontier:
   
 
   # primary routine to log crawl task done & submit extracted urls
-  def log_and_add_extracted(self, host_addr, success, time_taken=0, urls=[]):
+  def log_and_add_extracted(self, host_addr, success, time_taken=0, url_pkgs=[]):
 
     # add urls to either hq of host_addr or else overflow queue
-    for url in urls:
-      self._add_extracted_url(host_addr, url)
+    for url_pkg in url_pkgs:
+      self._add_extracted_url(host_addr, url_pkg)
 
     # handle failure of page pull
     # NOTE: TO-DO!
@@ -104,7 +104,8 @@ class urlFrontier:
     if len(self.hqs[host_addr]) > 0:
 
       # add task to crawl task queue
-      self.Q_crawl_tasks.put((next_time, host_addr, self.hqs[host_addr].pop()))
+      url, ref_page_stats = self.hqs[host_addr].pop()
+      self.Q_crawl_tasks.put((next_time, host_addr, url, ref_page_stats))
 
     # else if empty, add task to cleanup queue
     else:
@@ -116,7 +117,8 @@ class urlFrontier:
 
 
   # subroutine to add a url extracted from a host_addr
-  def _add_extracted_url(self, ref_host_addr, url_in):
+  def _add_extracted_url(self, ref_host_addr, url_pkg):
+    url_in, ref_page_stats = url_pkg
   
     # basic cleaning operations on url
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
@@ -132,7 +134,7 @@ class urlFrontier:
       # if this is an internal link, send directly to the serving hq
       # NOTE: need to check that equality operator is sufficient here!
       if host_addr == ref_host_addr:
-        self.hqs[host_addr].append(url)
+        self.hqs[host_addr].append((url, ref_page_stats))
 
         # !log as seen & add to active count
         self.seen.add(url)
@@ -145,7 +147,7 @@ class urlFrontier:
         if url_node == self.node_n:
 
           # add to overflow queue
-          self.Q_overflow_urls.put((host_addr, url))
+          self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
 
           # !log as seen & add to active count
           self.seen.add(url)
@@ -220,19 +222,19 @@ class urlFrontier:
 
   # subroutine for transferring urls from overflow queue to new hq
   def _overflow_to_new_hq(self):
-    host_addr, url = self.Q_overflow_urls.get()
+    host_addr, url, ref_page_stats = self.Q_overflow_urls.get()
     
     # if hq already exists, recycle- insertion not thread safe
     # NOTE: better way to do this while ensuring thread safety here?
     if self.hqs.has_key(host_addr):
       self.Q_overflow_urls.task_done()
-      self.Q_overflow_urls.put((host_addr, url))
+      self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
       return False
     else:
       
       # create new empty hq and send seed url to crawl task queue
       self.hqs[host_addr] = []
-      self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url))
+      self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, ref_page_stats))
       return True
   
 
@@ -286,24 +288,16 @@ class urlFrontier:
 
         # add to an existing hq, or create new one & log new crawl task
         if self.hqs.has_key(host_addr):
-          self.hqs[host_addr].append(url)
+          self.hqs[host_addr].append((url, None))
         else:
           self.hqs[host_addr] = []
-          self.Q_crawl_tasks.put((now, host_addr, url))
+          self.Q_crawl_tasks.put((now, host_addr, url, None))
 
       # else pass along to appropriate node
       # NOTE: TO-DO!
       else:
         pass
         
-        
-
-
-  # !!!NOTE NOTE How to do a join and make sure that program is blocked till all Qs empty??
-  # --> while loop?  while Q_crawl_tasks & Q_overflow_urls both non-empty... wait...?
-
-
-
 
 #
 # --> Command line functionality
