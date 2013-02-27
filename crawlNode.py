@@ -124,12 +124,18 @@ def crawl_page(uf, aq, thread_name='Thread-?'):
     html = basic_html_clean(buf.getvalue())
     extracted_urls, extracted_url_data = extract_link_data(html, url)
 
+    # NOTE: to-do: extract minimal set of page features needed to package with child links
+
+    # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
+
+    # NOTE: to-do: drop payload to out Q, to go to db and then to analyse node
+    
     # extract page features & analyze for keep / discard decision
-    page_stats, page_features = get_page_features(html, ref_page_stats)
-    extracted_url_packages = zip(extracted_urls, [page_stats + x for x in extracted_url_data])
+    #page_stats, page_features = get_page_features(html, ref_page_stats)
+    #extracted_url_packages = zip(extracted_urls, [page_stats + x for x in extracted_url_data])
     
     # add task to analysis queue
-    aq.put((html, page_features))
+    #aq.put((html, page_features))
 
     # log page pull as successful & submit extracted urls to url frontier
     uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
@@ -176,22 +182,22 @@ class MaintenanceThread(threading.Thread):
 
 
 # analysis thread class
-class AnalysisThread(threading.Thread):
-  def __init__(self, aq, w_0):
-    threading.Thread.__init__(self)
-    self.aq = aq
-    self.w = w0
-
-  def run(self):
-    while True:
-      html, page_features = self.aq.get()
-      confidence = analyze_page(html, page_features, self.w)
-
-      # NOTE: TO-DO: DECIDE WHETHER OR NOT TO DROP PAYLOAD
-
-      # NOTE: TO-DO: RECEIVE FEEDBACK & TRAIN MODEL (???)
-
-      # NOTE: TO-DO: log task done!
+#class AnalysisThread(threading.Thread):
+#  def __init__(self, aq, w_0):
+#    threading.Thread.__init__(self)
+#    self.aq = aq
+#    self.w = w0
+#
+#  def run(self):
+#    while True:
+#      html, page_features = self.aq.get()
+#      confidence = analyze_page(html, page_features, self.w)
+#
+#      # NOTE: TO-DO: DECIDE WHETHER OR NOT TO DROP PAYLOAD
+#
+#      # NOTE: TO-DO: RECEIVE FEEDBACK & TRAIN MODEL (???)
+#
+#      # NOTE: TO-DO: log task done!
 
 
 
@@ -205,7 +211,7 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   uf.initialize(initial_url_list)
 
   # instantiate an analysis Queue for collecting payload analysis jobs
-  aq = Queue.Queue()
+  #aq = Queue.Queue()
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):

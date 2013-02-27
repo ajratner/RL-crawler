@@ -18,6 +18,9 @@
 # - try using http://publicsuffix.org/list/?
 # - ***handle other doc types e.g. pdfs
 #  -***How to preserve domain link structure for relative parent/child calcs?
+# - DUAL LAYER PERCEPTRON THRESHOLD: have one serially-updating one on analyze node, have
+#   another simpler, low-thresh, less-frequently-updated one doing basic screen on crawl node
+#   e.g. 'Is there anything here at all??'
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK
@@ -29,8 +32,10 @@
 # - compare performance of Bloom filter versus a python Set
 # - ***upgrade DNS cache (currently a dict)?
 # - ***CHECK OUT EVENT-BASED I/O PROGRAMMING i.e. http://docs.celeryproject.org/en/latest/userguide/concurrency/eventlet.html or http://www.gevent.org/
+# - !!!Make sure mysqldb connection on multiple threads is working ok...?
 
 
 # NOTE --> useful links
 # * python global dict / thread safety: http://stackoverflow.com/questions/1312331/using-a-global-dictionary-with-threads-in-python
+# http://moo.nac.uci.edu/~hjm/HOWTO_move_data.html
 
