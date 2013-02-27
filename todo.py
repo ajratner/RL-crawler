@@ -21,6 +21,9 @@
 # - DUAL LAYER PERCEPTRON THRESHOLD: have one serially-updating one on analyze node, have
 #   another simpler, low-thresh, less-frequently-updated one doing basic screen on crawl node
 #   e.g. 'Is there anything here at all??'
+# _ ***how to restart/add new features without ruining work of classifier so far
+# - --> GENERAL RESTART MODULE
+# - ERROR MOD:: need to make sure active coutn Q is handled for all errors...
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK

@@ -111,9 +111,9 @@ class urlFrontier:
     else:
       self.Q_hq_cleanup.put((next_time, host_addr))
     
-    # report crawl task done to queue, subtract one from active count
+    # report crawl task done to queue, HOWEVER do not submit as done till payload dropped
     self.Q_crawl_tasks.task_done()
-    self.Q_active_count.task_done()
+    #self.Q_active_count.task_done()
 
 
   # subroutine to add a url extracted from a host_addr

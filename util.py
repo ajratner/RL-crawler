@@ -62,6 +62,18 @@ class Q_out_to_db:
     t.start()
 
 
+# conversion from list of features- numbers or token-lists- to a string e.g. 
+#     [1, 3.4, ('apple', 'bob'), 5] --> "1;3.4;apple,bob;5"
+def flist_to_string(flist):
+  string_out = ""
+  for f in flist:
+    if type(f) == int or type(f) == float:
+      string_out += str(f)
+    elif type(f) == tuple or type(f) == list:
+      string_out += ','.join(f)
+    string_out += ';'
+  return string_out
+
 
 # --> SIMPLE MYSQL/DB INTERFACE
 

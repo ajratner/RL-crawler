@@ -17,73 +17,16 @@ USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 
 CURLOPT_TIMEOUT = 60
 NODE_NUMBER = 0
 NUMBER_OF_NODES = 1
-
-
-# basic cleaning fn for incoming html string
-def basic_html_clean(html_string):
-  return re.sub(r'[\x7f-\xff]', '', html_string)
-
-
-# extracted link resolution
-def resolve_extracted_link(link, ref_url):
-
-  # following RFC 1808 <scheme>://<net_loc>/<path>;<params>?<query>#<fragment>
-
-  # first look for '//'- if present urlparse will handle properly
-  if re.search(r'//', link) is not None:
-    return link
-
-  # look for relative path '/'
-  elif re.search(r'^/', link) is not None:
-    rup = urlparse.urlsplit(ref_url)
-    return rup.scheme + '://' + rup.netloc + link
-
-  # look for clear netloc form- 'xxx.xxx.xxx'
-  elif re.search(r'^\w+\.\w+.\w+', link) is not None:
-    return '//' + link
-
-  # look for possible netloc form + path - 'xxx.xxx/yyy'
-  elif re.search(r'^\w+\.\w+/', link) is not None:
-    return '//' + link
-
-  # look for known throw-away forms
-  elif re.search(r'^mailto:', link) is not None:
-    return None
-  
-  # NOTE: TO-DO --> run testing, try to think of further catches
-  else:
-    
-    # NOTE: TO-DO --> log to some sort of error file
-    rup = urlparse.urlsplit(ref_url)
-    return rup.scheme + '://' + rup.netloc + '/' + link
-
-
-# link extractor subfunction
-def extract_link_data(html, ref_url):
-  urls = []
-  url_data = []
-  
-  # look for all a tags
-  link_tags = re.findall(r'<a(\s[^>]+)?>(.*?)</a>', html)
-  for link_tag in link_tags:
-    link = re.search(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', link_tag)
-    if link is not None:
-
-      # try to resolve link
-      link_url = resolve_extracted_link(link.group(1), ref_url)
-      if link_url is not None:
-        urls.append(link_url)
-        url_data.append((link.group(2)))
-  
-  return urls, url_data
+DB_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
+DB_PAYLOAD_TABLE = 'payload_table'
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
 # back to frontier
-def crawl_page(uf, aq, thread_name='Thread-?'):
+def crawl_page(uf, Q_out, thread_name='Thread-?'):
   
   # get page from urlFrontier
-  next_pull_time, host_addr, url, ref_page_stats = uf.get_crawl_task()
+  next_pull_time, host_addr, url, parent_page_stats = uf.get_crawl_task()
 
   # FOR TESTING
   print '\n%s got %s from queue' % (thread_name, url)
@@ -122,22 +65,25 @@ def crawl_page(uf, aq, thread_name='Thread-?'):
 
     # parse page for links & associated data
     html = basic_html_clean(buf.getvalue())
-    extracted_urls, extracted_url_data = extract_link_data(html, url)
-
-    # NOTE: to-do: extract minimal set of page features needed to package with child links
+    extracted_urls, link_stats = extract_link_data(html, url)
+    
+    # parse page for (A) stats that need to be passed on with child links, (B) page features
+    page_stats, page_features = analyze_page(html, parent_page_stats)
 
     # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
 
-    # NOTE: to-do: drop payload to out Q, to go to db and then to analyse node
-    
-    # extract page features & analyze for keep / discard decision
-    #page_stats, page_features = get_page_features(html, ref_page_stats)
-    #extracted_url_packages = zip(extracted_urls, [page_stats + x for x in extracted_url_data])
-    
-    # add task to analysis queue
-    #aq.put((html, page_features))
+    # add page, url + features list to queue out (-> database / analysis nodes)
+    row_dict = {
+      'url': url,
+      'features': flist_to_string(page_features),
+      'html': html
+    }
+    Q_out.Q_out.put(row_dict)
 
-    # log page pull as successful & submit extracted urls to url frontier
+    # package all data that needs to be passed on with child links
+    extracted_url_pkgs = zip(extracted_urls, [page_stats + ls for ls in link_stats])
+
+    # log page pull as successful & submit extracted urls + data to url frontier
     uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
 
   else:
@@ -146,15 +92,15 @@ def crawl_page(uf, aq, thread_name='Thread-?'):
 
 # crawl thread class
 class CrawlThread(threading.Thread):
-  def __init__(self, uf, aq):
+  def __init__(self, uf, Q_out):
     threading.Thread.__init__(self)
     self.uf = uf
-    self.aq = aq
+    self.Q_out = Q_out
 
   def run(self):
     while True:
       try:
-        crawl_page(self.uf, self.aq, self.getName())
+        crawl_page(self.uf, self.Q_out, self.getName())
 
       # in case of exception, log task done to crawl task & active count queues to un-block
       except Exception as e:
@@ -181,26 +127,6 @@ class MaintenanceThread(threading.Thread):
         self.uf.Q_hq_cleanup.task_done()
 
 
-# analysis thread class
-#class AnalysisThread(threading.Thread):
-#  def __init__(self, aq, w_0):
-#    threading.Thread.__init__(self)
-#    self.aq = aq
-#    self.w = w0
-#
-#  def run(self):
-#    while True:
-#      html, page_features = self.aq.get()
-#      confidence = analyze_page(html, page_features, self.w)
-#
-#      # NOTE: TO-DO: DECIDE WHETHER OR NOT TO DROP PAYLOAD
-#
-#      # NOTE: TO-DO: RECEIVE FEEDBACK & TRAIN MODEL (???)
-#
-#      # NOTE: TO-DO: log task done!
-
-
-
 # main multi-thread crawl routine
 def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   
@@ -210,12 +136,12 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   # initialize the urlFrontier
   uf.initialize(initial_url_list)
 
-  # instantiate an analysis Queue for collecting payload analysis jobs
-  #aq = Queue.Queue()
+  # instantiate a queue-out-to-db handler
+  Q_out = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_count)
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):
-    t = CrawlThread(uf, aq)
+    t = CrawlThread(uf, Q_out)
     t.setDaemon(True)
     t.start()
 
