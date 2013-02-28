@@ -30,12 +30,13 @@ class Timer:
 
 # for transfer to db
 class PostmanThreadDB(threading.Thread):
-  def __init__(self, Q_out, db_vars, db_table_name, Q_task_done=None):
+  def __init__(self, Q_out, db_vars, db_table_name, Q_task_done=None, Q_logs=None):
     threading.Thread.__init__(self)
     self.Q_out = Q_out
     self.db_vars = db_vars
     self.db_table_name = db_table_name
     self.Q_task_done = Q_task_done
+    self.Q_logs = Q_logs
 
   
   def run(self):
@@ -47,10 +48,16 @@ class PostmanThreadDB(threading.Thread):
 
         # insert row into db
         insert_row_dict(handle, self.db_table_name, mail_dict)
+        
+        if self.Q_logs is not None:
+          self.Q_logs.put("Postman: "+mail_dict['url']+" html and features payload dropped!")
 
         # report item out success to master joining queue if applicable
         if self.Q_task_done is not None:
           self.Q_task_done.task_done()
+          
+          if self.Q_logs is not None:
+            self.Q_logs.put("Active count: " + str(self.Q_task_done.qsize()))
     
 
 class Q_out_to_db:
@@ -79,7 +86,6 @@ class PostmanThreadFile(threading.Thread):
     self.Q_out = Q_out
     self.fpath = fpath
     self.Q_task_done = Q_task_done
-    self.Q_logs = Q_logs
 
   
   def run(self):
@@ -95,9 +101,6 @@ class PostmanThreadFile(threading.Thread):
         # report item out success to master joining queue if applicable
         if self.Q_task_done is not None:
           self.Q_task_done.task_done()
-
-          if DEBUG_MODE:
-            self.Q_logs.put("Active count: " + self.Q_task_done.qsize())
     
 
 class Q_out_to_file:

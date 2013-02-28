@@ -60,38 +60,48 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
 
   # pull page from web and record pull time
   with Timer() as t:
-    c.perform()
+    try:
+      c.perform()
+      pulled = True
+    except Exception as e:
+      uf.log_and_add_extracted(host_addr, False)
+      uf.Q_active_count.task_done()
+      Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
+      pulled = False
   
-  # Check for page transfer success (not connection/transfer timeouts are handled by opts)
-  if c.getinfo(c.HTTP_CODE) < 400:
+  if pulled:
 
-    # parse page for links & associated data
-    html = basic_html_clean(buf.getvalue())
-    extracted_urls, link_stats = extract_link_data(html, url, Q_logs)
-    
-    # parse page for (A) stats that need to be passed on with child links, (B) page features
-    page_stats, page_features = analyze_page(html, parent_page_stats, Q_logs)
+    # Check for page transfer success (not connection/transfer timeouts are handled by opts)
+    if c.getinfo(c.HTTP_CODE) < 400:
 
-    # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
+      # parse page for links & associated data
+      html = basic_html_clean(buf.getvalue())
+      extracted_urls, link_stats = extract_link_data(html, url, Q_logs)
+      
+      # parse page for (A) stats that need to be passed on with child links, (B) page features
+      # if parent_page_stats is None, we will assume the page is one of the seed pages
+      page_stats, page_features = analyze_page(html, parent_page_stats, Q_logs)
 
-    # add page, url + features list to queue out (-> database / analysis nodes)
-    row_dict = {
-      'url': url,
-      'features': flist_to_string(page_features),
-      'html': html
-    }
-    Q_payload.Q_out.put(row_dict)
+      # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
 
-    # package all data that needs to be passed on with child links
-    extracted_url_pkgs = zip(extracted_urls, [page_stats + ls for ls in link_stats])
+      # add page, url + features list to queue out (-> database / analysis nodes)
+      row_dict = {
+        'url': url,
+        'features': flist_to_string(page_features),
+        'html': html
+      }
+      Q_payload.Q_out.put(row_dict)
 
-    # log page pull as successful & submit extracted urls + data to url frontier
-    uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
+      # package all data that needs to be passed on with child links
+      extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats])
 
-  else:
-    uf.log_and_add_extracted(host_addr, False)
-    uf.Q_active_count.task_done()
-    Q_logs.put('%s: Got HTTP code %s from %s at %s', (thread_name, c.HTTP_CODE, url, datetime.datetime.now()))
+      # log page pull as successful & submit extracted urls + data to url frontier
+      uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
+
+    else:
+      uf.log_and_add_extracted(host_addr, False)
+      uf.Q_active_count.task_done()
+      Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))
 
 
 
@@ -133,7 +143,7 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   uf.initialize(initial_url_list)
 
   # instantiate a queue-out-to-db handler
-  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_counti, Q_logs)
+  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_count, Q_logs)
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):

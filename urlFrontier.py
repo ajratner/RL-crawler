@@ -100,7 +100,7 @@ class urlFrontier:
     # calculate time delay based on success
     now = datetime.datetime.now()
     r = random.random()
-    td = 10*time_to_pull + r*BASE_PULL_DELAY if success else (1 + r)*BASE_PULL_DELAY
+    td = 10*time_taken + r*BASE_PULL_DELAY if success else (1 + r)*BASE_PULL_DELAY
     next_time = now + datetime.timedelta(0, td)
 
     # if the hq of host_addr is not empty, enter new task in crawl task queue
@@ -133,38 +133,45 @@ class urlFrontier:
       url_parts = urlparse.urlsplit(url)
       host_addr = self._get_and_log_addr(url_parts.netloc)
 
-      # if this is an internal link, send directly to the serving hq
-      # NOTE: need to check that equality operator is sufficient here!
-      if host_addr == ref_host_addr:
-        self.hqs[host_addr].append((url, ref_page_stats))
+      if host_addr is not None:
 
-        # !log as seen & add to active count
-        self.seen.add(url)
-        self.Q_active_count.put(True)
-        
-        if DEBUG_MODE:
-          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-      
-      else:
-        
-        # check if this address belongs to this node
-        url_node = hash(host_addr) % self.num_nodes
-        if url_node == self.node_n:
-
-          # add to overflow queue
-          self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
+        # if this is an internal link, send directly to the serving hq
+        # NOTE: need to check that equality operator is sufficient here!
+        if host_addr == ref_host_addr:
+          self.hqs[host_addr].append((url, ref_page_stats))
 
           # !log as seen & add to active count
           self.seen.add(url)
           self.Q_active_count.put(True)
-
+          
           if DEBUG_MODE:
             self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
         
-        # else pass along to appropriate node
-        # NOTE: TO-DO!
         else:
-          pass
+          
+          # check if this address belongs to this node
+          url_node = hash(host_addr) % self.num_nodes
+          if url_node == self.node_n:
+
+            # add to overflow queue
+            self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
+
+            # !log as seen & add to active count
+            self.seen.add(url)
+            self.Q_active_count.put(True)
+
+            if DEBUG_MODE:
+              self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+          
+          # else pass along to appropriate node
+          # NOTE: TO-DO!
+          else:
+            pass
+
+      # else if DNS was not resolved
+      # NOTE: TO-DO!
+      else:
+        pass
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -195,14 +202,14 @@ class urlFrontier:
     try:
       addr_info = socket.getaddrinfo(hostname, None)
     except Exception as e:
-      self.Q_logs.put('DNS Error accessing ' + hostname)
+      self.Q_logs.put('DNS ERROR: skipping ' + hostname)
       return None
 
     # ensure result is non-null
     if len(addr_info) > 0:
       return addr_info[0][4][0]
     else:
-      self.Q_logs.put('DNS Error, null returned for ' + hostname)
+      self.Q_logs.put('DNS ERROR: skipping ' + hostname)
       return None
 
 
@@ -283,29 +290,35 @@ class urlFrontier:
       url_parts = urlparse.urlsplit(url)
       host_addr = self._get_and_log_addr(url_parts.netloc)
 
-      # check if this address belongs to this node
-      url_node = hash(host_addr) % self.num_nodes
-      if url_node == self.node_n:
+      if host_addr is not None:
 
-        # !log as seen & add to active count
-        self.seen.add(url)
-        self.Q_active_count.put(True)
+        # check if this address belongs to this node
+        url_node = hash(host_addr) % self.num_nodes
+        if url_node == self.node_n:
 
-        if DEBUG_MODE:
-          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+          # !log as seen & add to active count
+          self.seen.add(url)
+          self.Q_active_count.put(True)
 
-        # add to an existing hq, or create new one & log new crawl task
-        if self.hqs.has_key(host_addr):
-          self.hqs[host_addr].append((url, None))
+          if DEBUG_MODE:
+            self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+
+          # add to an existing hq, or create new one & log new crawl task
+          if self.hqs.has_key(host_addr):
+            self.hqs[host_addr].append((url, None))
+          else:
+            self.hqs[host_addr] = []
+            self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
+
+        # else pass along to appropriate node
+        # NOTE: TO-DO!
         else:
-          self.hqs[host_addr] = []
-          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
+          pass
 
-      # else pass along to appropriate node
+      # else if DNS was not resolved
       # NOTE: TO-DO!
       else:
-        pass
-        
+        pass  
 
 #
 # --> Command line functionality

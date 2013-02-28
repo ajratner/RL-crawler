@@ -8,11 +8,12 @@ from bs4 import BeautifulSoup
 from collections import Counter
 from nltk.stem.porter import PorterStemmer
 from util import *
+import urlparse
 
 
 # re subfunction for returning page text only
 def get_page_text(html):
-  return re.sub(r'\s', '', re.sub(r'\n(\s*\n)+', r'\n', re.sub(r'&\w{2,4};', '', re.sub(r'<.*?>', '', re.sub(r'<(a|script|style).*?>.*?</\1>', '', html, 0, re.DOTALL)))))
+  return re.sub(r'\n(\s*\n)+', r'\n', re.sub(r'&\w{2,4};', '', re.sub(r'<.*?>', '', re.sub(r'<(a|script|style).*?>.*?</\1>', '', html, 0, re.DOTALL))))
 
 
 # re subfunction for getting page tokens
@@ -84,7 +85,7 @@ def extract_link_data(html, ref_url, Q_logs=None):
   url_data = []
   
   # look for all a tags
-  link_tags = re.findall(r'<a(\s[^>]+)?>(.*?)</a>', html)
+  link_tags = re.findall(r'<a(?:\s[^>]+)?>.*?</a>', html)
   for link_tag in link_tags:
     link = re.search(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', link_tag)
     if link is not None:
@@ -95,7 +96,7 @@ def extract_link_data(html, ref_url, Q_logs=None):
         urls.append(link_url)
 
         # url data: (link_text_tokens)
-        url_data.append((tokens(link.group(2))))
+        url_data.append((tokens(link.group(2)),))
   
   return urls, url_data
 
@@ -152,19 +153,30 @@ def calc_LTS(html, Q_logs):
 #                       title_tokens )
 
 def analyze_page(html, parent_page_stats, Q_logs=None):
-  ref_ptl, ref_nl, ref_tt, ref_ltt = parent_page_stats
   pt = get_page_text(html)
-
-  # calculate & package stats / features
+  
+  # first calculate stats/features that depend on html only
   try:
     tt = tokens(re.match(r'<title[^>]*>(.*?)</title>', html).group(1))
   except:
     tt = []
   ptl = float(len(pt))
-  rpt = ptl / ref_pt
   nl = float(len(re.findall(r'<a\s.*?>', html)))
-  rnl = nl / ref_nl
   lts = calc_LTS(html, Q_logs)
   mft = mf_words(pt, 20)
+
+  # next handle those dependent on parent page data (for relative measures)
+  # NOTE: assume that if this var is none, dealing with seed pages at beginning of crawl
+  if parent_page_stats is not None:
+    ref_ptl, ref_nl, ref_tt, ref_ltt = parent_page_stats
+
+    # calculate & package stats / features
+    rpt = ptl / ref_ptl
+    rnl = nl / ref_nl
+  
+  # else use default neutral vals- beginning of crawl so doesn't matter much
+  else:
+    rpt = 1.0
+    rnl = 1.0
 
   return (ptl, nl, tt), (rpt, rnl, lts, mft, tt)
