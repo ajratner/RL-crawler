@@ -28,6 +28,7 @@ def tokens(string):
 STOP_TOKENS = ["this", "that", "shall", "under", "with", "other", "within", "from", "such", "which", "means", "each", "have", "including", "upon", "after", "these", "been", "include", "otherwise", "against", "least", "through", "than", "unless", "does", "either", "whether", "without", "only", "between", "described", "percent", "their", "then", "those", "when", "except", "into", "during", "iii", "where", "would", "they", "itself", "last", "there", "also", "below", "here", "includes", "more", "neither", "being", "both", "cannot", "about", "above", "were", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eigth", "ninth", "tenth", "three", "four", "five", "seven", "eight", "nine"]
 
 
+# return most frequent non-stop/small words as list
 def mf_words(pg_txt, n):
   c = Counter([t.lower() for t in tokens(pg_txt) if len(t) > 3])
   for sw in STOP_TOKENS:
@@ -41,7 +42,7 @@ def basic_html_clean(html_string):
 
 
 # extracted link resolution
-def resolve_extracted_link(link, ref_url):
+def resolve_extracted_link(link, ref_url, Q_logs):
 
   # following RFC 1808 <scheme>://<net_loc>/<path>;<params>?<query>#<fragment>
 
@@ -68,14 +69,17 @@ def resolve_extracted_link(link, ref_url):
   
   # NOTE: TO-DO --> run testing, try to think of further catches
   else:
+
+    # log for improvement purposes
+    if Q_logs is not None:
+      Q_logs.put("LINK PARSE EXCEPTION: %s", (link,))
     
-    # NOTE: TO-DO --> log to some sort of error file
     rup = urlparse.urlsplit(ref_url)
     return rup.scheme + '://' + rup.netloc + '/' + link
 
 
 # link extractor subfunction
-def extract_link_data(html, ref_url):
+def extract_link_data(html, ref_url, Q_logs=None):
   urls = []
   url_data = []
   
@@ -86,7 +90,7 @@ def extract_link_data(html, ref_url):
     if link is not None:
 
       # try to resolve link
-      link_url = resolve_extracted_link(link.group(1), ref_url)
+      link_url = resolve_extracted_link(link.group(1), ref_url, Q_logs)
       if link_url is not None:
         urls.append(link_url)
 
@@ -101,7 +105,7 @@ def extract_link_data(html, ref_url):
 # NOTE: to-do: handle <h\n>?  Look through w3 list of tags and handle all...
 TEXT_TAGS = ["p", "b", "i", "u", "ul", "li", "table", "th", "tr", "td", "tbody", "thead", "tfoot"]
 SKIP_TAGS = ["br", "hr", "img", "link", "meta", "META", "if", "endif"]
-def calc_LTS(html):
+def calc_LTS(html, Q_logs):
   ts = 0
   lts = 0
 
@@ -109,21 +113,26 @@ def calc_LTS(html):
   split_html = re.findall(r'<[^>]+>|[^><]+', html)
 
   # count text sequences
-  lvl = ['top'];
-  for t in split_html:
-    if t[0] == '<' and t[1] == '/':
-      del lvl[-1]
-    elif t[0] == '<':
-      try:
-        tag = re.match('<\W*(\w+)', t).group(1)
-        if tag not in SKIP_TAGS:
-          lvl.append(tag)
-          ts = ts if lvl[-1] in TEXT_TAGS else 0
-      except AttributeError:
-        print 'Error extracting tag from ' + t
-    elif lvl[-1] in TEXT_TAGS:
-      ts += len(re.sub(r'\s', '', t))
-      lts = ts if ts > lts else lts
+  try:
+    lvl = ['top'];
+    for t in split_html:
+      if t[0] == '<' and t[1] == '/':
+        del lvl[-1]
+      elif t[0] == '<':
+        try:
+          tag = re.match('<\W*(\w+)', t).group(1)
+          if tag not in SKIP_TAGS:
+            lvl.append(tag)
+            ts = ts if lvl[-1] in TEXT_TAGS else 0
+        except AttributeError:
+          if Q_logs is not None:
+            Q_logs.put('HTML PARSE EXCEPTION: Error extracting tag from ' + t)
+      elif lvl[-1] in TEXT_TAGS:
+        ts += len(re.sub(r'\s', '', t))
+        lts = ts if ts > lts else lts
+  except:
+    if Q_logs is not None:
+      Q_logs.put('LTS CALC FATAL ERROR: lts = ' + lts + ', parsing html:\n ' + html)
   return lts
 
 
@@ -142,7 +151,7 @@ def calc_LTS(html):
 #                       most_frequent_tokens,
 #                       title_tokens )
 
-def analyze_page(html, parent_page_stats):
+def analyze_page(html, parent_page_stats, Q_logs=None):
   ref_ptl, ref_nl, ref_tt, ref_ltt = parent_page_stats
   pt = get_page_text(html)
 
@@ -155,7 +164,7 @@ def analyze_page(html, parent_page_stats):
   rpt = ptl / ref_pt
   nl = float(len(re.findall(r'<a\s.*?>', html)))
   rnl = nl / ref_nl
-  lts = calc_LTS(html)
+  lts = calc_LTS(html, Q_logs)
   mft = mf_words(pt, 20)
 
   return (ptl, nl, tt), (rpt, rnl, lts, mft, tt)

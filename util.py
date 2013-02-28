@@ -2,10 +2,14 @@ import time
 import MySQLdb as mdb
 import threading
 import Queue
+import os
 
 
 # FOR TESTING OF DB INTERFACE CLASS
 DB_TEST_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
+
+
+DEBUG_MODE = True
 
 
 # timing using "with"
@@ -23,7 +27,9 @@ class Timer:
 # simple multi-thread safe data funnel class:
 # instantiates Queue.Queue() which collects items from threads, and then transfers them out
 # will also report task done to global queue if one is passed in
-class PostmanThread(threading.Thread):
+
+# for transfer to db
+class PostmanThreadDB(threading.Thread):
   def __init__(self, Q_out, db_vars, db_table_name, Q_task_done=None):
     threading.Thread.__init__(self)
     self.Q_out = Q_out
@@ -48,18 +54,67 @@ class PostmanThread(threading.Thread):
     
 
 class Q_out_to_db:
-  def __init__(self, db_vars, db_table_name, Q_task_done=None):
+  def __init__(self, db_vars, db_table_name, Q_task_done=None, Q_logs=None):
     self.db_vars = db_vars
     self.db_table_name = db_table_name
+    self.Q_task_done = Q_task_done
+    self.Q_logs = Q_logs
+
+    # the queue of packages to be sent out
+    self.Q_out = Queue.Queue()
+
+    # start the 'postman' worker thread
+    t = PostmanThreadDB(self.Q_out, self.db_vars, self.db_table_name, self.Q_task_done, self.Q_logs)
+    t.setDaemon(True)
+    t.start()
+
+  def put(self, row_dict):
+    self.Q_out.put(row_dict)
+
+
+# for transfer to file
+class PostmanThreadFile(threading.Thread):
+  def __init__(self, Q_out, fpath, Q_task_done=None):
+    threading.Thread.__init__(self)
+    self.Q_out = Q_out
+    self.fpath = fpath
+    self.Q_task_done = Q_task_done
+    self.Q_logs = Q_logs
+
+  
+  def run(self):
+    while True:
+      with open(self.fpath, 'a') as f:
+
+        # get item from queue, item should be string
+        mail_string = str(self.Q_out.get()) + '\n'
+
+        # write line to file
+        f.write(mail_string)
+
+        # report item out success to master joining queue if applicable
+        if self.Q_task_done is not None:
+          self.Q_task_done.task_done()
+
+          if DEBUG_MODE:
+            self.Q_logs.put("Active count: " + self.Q_task_done.qsize())
+    
+
+class Q_out_to_file:
+  def __init__(self, fpath_rel, Q_task_done=None):
+    self.fpath = os.path.join(os.path.dirname(__file__), fpath_rel)
     self.Q_task_done = Q_task_done
 
     # the queue of packages to be sent out
     self.Q_out = Queue.Queue()
 
     # start the 'postman' worker thread
-    t = PostmanThread(self.Q_out, self.db_vars, self.db_table_name, self.Q_task_done)
+    t = PostmanThreadFile(self.Q_out, self.fpath, self.Q_task_done)
     t.setDaemon(True)
     t.start()
+
+  def put(self, string):
+    self.Q_out.put(string)
 
 
 # conversion from list of features- numbers or token-lists- to a string e.g. 

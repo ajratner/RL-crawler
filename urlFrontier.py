@@ -26,6 +26,8 @@ BF_FILENAME = 'seen.bloom'
 HQ_TO_THREAD_RATIO = 3
 MAX_QUEUE_SIZE = 10000
 
+DEBUG_MODE = True
+
 
 # url frontier object at a node #[nodeN] of [numNodes]
 #
@@ -43,10 +45,11 @@ MAX_QUEUE_SIZE = 10000
 
 class urlFrontier:
   
-  def __init__(self, node_n, num_nodes, num_threads=1):
+  def __init__(self, node_n, num_nodes, num_threads, Q_logs):
     self.node_n = node_n
     self.num_nodes = num_nodes
     self.num_threads = num_threads
+    self.Q_logs = Q_logs
     
     # crawl task Queue
     # Priority Queue ~ [ (next_pull_time, host_addr, url, ref_page_stats) ]
@@ -113,7 +116,6 @@ class urlFrontier:
     
     # report crawl task done to queue, HOWEVER do not submit as done till payload dropped
     self.Q_crawl_tasks.task_done()
-    #self.Q_active_count.task_done()
 
 
   # subroutine to add a url extracted from a host_addr
@@ -139,6 +141,9 @@ class urlFrontier:
         # !log as seen & add to active count
         self.seen.add(url)
         self.Q_active_count.put(True)
+        
+        if DEBUG_MODE:
+          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
       
       else:
         
@@ -153,6 +158,9 @@ class urlFrontier:
           self.seen.add(url)
           self.Q_active_count.put(True)
 
+          if DEBUG_MODE:
+            self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+        
         # else pass along to appropriate node
         # NOTE: TO-DO!
         else:
@@ -187,14 +195,14 @@ class urlFrontier:
     try:
       addr_info = socket.getaddrinfo(hostname, None)
     except Exception as e:
-      print 'DNS Error accessing ' + hostname
+      self.Q_logs.put('DNS Error accessing ' + hostname)
       return None
 
     # ensure result is non-null
     if len(addr_info) > 0:
       return addr_info[0][4][0]
     else:
-      print 'DNS Error, null returned for ' + hostname
+      self.Q_logs.put('DNS Error, null returned for ' + hostname)
       return None
 
 
@@ -212,7 +220,7 @@ class urlFrontier:
     # delete queue and add new one
     del self.hqs[host_addr]
     added = False
-    while !added:
+    while not added:
       added = self._overflow_to_new_hq()
 
     # log task done to both queues
@@ -252,9 +260,6 @@ class urlFrontier:
       if len(urls) > 0:
         self._init_add_url(urls.pop())
 
-        # !increment active count
-        self.Q_active_count.put(True)
-
       # else add empty queues and mark to be cleared & replaced
       else:
         self.hqs[i] = []
@@ -286,12 +291,15 @@ class urlFrontier:
         self.seen.add(url)
         self.Q_active_count.put(True)
 
+        if DEBUG_MODE:
+          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+
         # add to an existing hq, or create new one & log new crawl task
         if self.hqs.has_key(host_addr):
           self.hqs[host_addr].append((url, None))
         else:
           self.hqs[host_addr] = []
-          self.Q_crawl_tasks.put((now, host_addr, url, None))
+          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
 
       # else pass along to appropriate node
       # NOTE: TO-DO!

@@ -8,8 +8,7 @@ import re
 import pycurl
 import cStringIO
 import threading
-from pageAnalyze import get_page_features
-from pageAnalyze import analyze_page
+from pageAnalyze import *
 
 
 # global constants
@@ -19,17 +18,19 @@ NODE_NUMBER = 0
 NUMBER_OF_NODES = 1
 DB_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
 DB_PAYLOAD_TABLE = 'payload_table'
+LOG_REL_PATH = 'logs/log'
+DEBUG_MODE = True
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
 # back to frontier
-def crawl_page(uf, Q_out, thread_name='Thread-?'):
+def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   
   # get page from urlFrontier
   next_pull_time, host_addr, url, parent_page_stats = uf.get_crawl_task()
 
-  # FOR TESTING
-  print '\n%s got %s from queue' % (thread_name, url)
+  if DEBUG_MODE:
+    Q_logs.put('%s: got %s from queue' % (thread_name, url))
 
   # construct full addr-based url
   url_parts = list(urlparse.urlsplit(url))
@@ -54,7 +55,8 @@ def crawl_page(uf, Q_out, thread_name='Thread-?'):
   wait_time = next_pull_time - datetime.datetime.now()
   time.sleep(max(0, wait_time.total_seconds()))
 
-  print '\n%s pulling page %s at %s' % (thread_name, url, datetime.datetime.now())
+  if DEBUG_MODE:
+    Q_logs.put('%s: pulling page %s at %s' % (thread_name, url, datetime.datetime.now()))
 
   # pull page from web and record pull time
   with Timer() as t:
@@ -65,10 +67,10 @@ def crawl_page(uf, Q_out, thread_name='Thread-?'):
 
     # parse page for links & associated data
     html = basic_html_clean(buf.getvalue())
-    extracted_urls, link_stats = extract_link_data(html, url)
+    extracted_urls, link_stats = extract_link_data(html, url, Q_logs)
     
     # parse page for (A) stats that need to be passed on with child links, (B) page features
-    page_stats, page_features = analyze_page(html, parent_page_stats)
+    page_stats, page_features = analyze_page(html, parent_page_stats, Q_logs)
 
     # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
 
@@ -78,7 +80,7 @@ def crawl_page(uf, Q_out, thread_name='Thread-?'):
       'features': flist_to_string(page_features),
       'html': html
     }
-    Q_out.Q_out.put(row_dict)
+    Q_payload.Q_out.put(row_dict)
 
     # package all data that needs to be passed on with child links
     extracted_url_pkgs = zip(extracted_urls, [page_stats + ls for ls in link_stats])
@@ -87,26 +89,23 @@ def crawl_page(uf, Q_out, thread_name='Thread-?'):
     uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
 
   else:
-    uf.log(addr, False)
+    uf.log_and_add_extracted(host_addr, False)
+    uf.Q_active_count.task_done()
+    Q_logs.put('%s: Got HTTP code %s from %s at %s', (thread_name, c.HTTP_CODE, url, datetime.datetime.now()))
+
 
 
 # crawl thread class
 class CrawlThread(threading.Thread):
-  def __init__(self, uf, Q_out):
+  def __init__(self, uf, Q_payload, Q_logs):
     threading.Thread.__init__(self)
     self.uf = uf
-    self.Q_out = Q_out
+    self.Q_payload = Q_payload
+    self.Q_logs = Q_logs
 
   def run(self):
     while True:
-      try:
-        crawl_page(self.uf, self.Q_out, self.getName())
-
-      # in case of exception, log task done to crawl task & active count queues to un-block
-      except Exception as e:
-        print e
-        self.uf.Q_crawl_tasks.task_done()
-        self.uf.Q_active_count.task_done()
+      crawl_page(self.uf, self.Q_payload, self.Q_logs, self.getName())
 
 
 # maintenance thread class
@@ -117,31 +116,28 @@ class MaintenanceThread(threading.Thread):
 
   def run(self):
     while True:
-      try:
-        self.uf.clean_and_fill()
-
-      # in case of exception, log tasks done to overflow & cleanup queues to un-block
-      except Exception as e:
-        print e
-        self.uf.Q_overflow_urls.task_done()
-        self.uf.Q_hq_cleanup.task_done()
+      self.uf.clean_and_fill()
 
 
 # main multi-thread crawl routine
 def multithread_crawl(n_threads, n_mthreads, initial_url_list):
   
+  # instantiate a queue-out-to-logs handler
+  Q_logs = Q_out_to_file(LOG_REL_PATH)
+  Q_logs.put("\n\nSession Start at %s" % (datetime.datetime.now(),))
+
   # instantiate one urlFontier object for all threads
-  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads)
+  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads, Q_logs)
 
   # initialize the urlFrontier
   uf.initialize(initial_url_list)
 
   # instantiate a queue-out-to-db handler
-  Q_out = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_count)
+  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_counti, Q_logs)
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):
-    t = CrawlThread(uf, Q_out)
+    t = CrawlThread(uf, Q_payload, Q_logs)
     t.setDaemon(True)
     t.start()
 

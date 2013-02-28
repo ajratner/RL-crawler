@@ -41,4 +41,5 @@
 # NOTE --> useful links
 # * python global dict / thread safety: http://stackoverflow.com/questions/1312331/using-a-global-dictionary-with-threads-in-python
 # http://moo.nac.uci.edu/~hjm/HOWTO_move_data.html
+# * python threading mechanisms: http://www.laurentluce.com/posts/python-threads-synchronization-locks-rlocks-semaphores-conditions-events-and-queues/
 
