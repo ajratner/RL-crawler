@@ -9,6 +9,7 @@ from collections import Counter
 from nltk.stem.porter import PorterStemmer
 from util import *
 import urlparse
+from node_globals import *
 
 
 # re subfunction for returning page text only
@@ -146,18 +147,21 @@ def calc_LTS(html, Q_logs):
 # outputs:
 #   - page_stats = (page_text_len, num_links, title_tokens)
 #   - page_features = (
-#                       rel_page_text_len,
-#                       rel_num_links,
-#                       longest_text_sequence,
-#                       most_frequent_tokens,
-#                       title_tokens )
+#                       #: rel_page_text_len,
+#                       #: rel_num_links,
+#                       #: longest_text_sequence,
+#                       [t]: most_frequent_tokens,
+#                       [t]: title_tokens,
+#                       [t]: parent_link_text_tokens,
+#                       [t]: parent_title_tokens 
+#                     )
 
 def analyze_page(html, parent_page_stats, Q_logs=None):
   pt = get_page_text(html)
   
   # first calculate stats/features that depend on html only
   try:
-    tt = tokens(re.match(r'<title[^>]*>(.*?)</title>', html).group(1))
+    tt = tokens(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
   except:
     tt = []
   ptl = float(len(pt))
@@ -178,5 +182,7 @@ def analyze_page(html, parent_page_stats, Q_logs=None):
   else:
     rpt = 1.0
     rnl = 1.0
+    ref_ltt = []
+    ref_tt = []
 
-  return (ptl, nl, tt), (rpt, rnl, lts, mft, tt)
+  return (ptl, nl, tt), (rpt, rnl, lts, mft, tt, ref_ltt, ref_tt)

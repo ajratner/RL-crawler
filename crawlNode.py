@@ -9,17 +9,7 @@ import pycurl
 import cStringIO
 import threading
 from pageAnalyze import *
-
-
-# global constants
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
-CURLOPT_TIMEOUT = 60
-NODE_NUMBER = 0
-NUMBER_OF_NODES = 1
-DB_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
-DB_PAYLOAD_TABLE = 'payload_table'
-LOG_REL_PATH = 'logs/log'
-DEBUG_MODE = True
+from node_globals import *
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding

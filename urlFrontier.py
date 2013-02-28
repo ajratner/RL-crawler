@@ -9,24 +9,7 @@ from util import *
 import Queue
 import re
 from pybloomfilter import BloomFilter
-
-
-# global time constants
-DNS_REFRESH_TIME = 21600  # Refresh DNS every 6 hours
-BASE_PULL_DELAY = 60  # Base time constant to wait for pulling from domain = 60 secs
-
-
-# Bloom filter (for seen url lookup) constants
-BF_CAPACITY = 10000000
-BF_ERROR_RATE = 0.001
-BF_FILENAME = 'seen.bloom'
-
-
-# backq maintenance constants
-HQ_TO_THREAD_RATIO = 3
-MAX_QUEUE_SIZE = 10000
-
-DEBUG_MODE = True
+from node_globals import *
 
 
 # url frontier object at a node #[nodeN] of [numNodes]

@@ -3,13 +3,7 @@ import MySQLdb as mdb
 import threading
 import Queue
 import os
-
-
-# FOR TESTING OF DB INTERFACE CLASS
-DB_TEST_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
-
-
-DEBUG_MODE = True
+from node_globals import *
 
 
 # timing using "with"
