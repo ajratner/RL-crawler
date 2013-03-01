@@ -187,12 +187,20 @@ def insert_row_dict(handle, table_name, row_dict):
 
 
 # pop a row
-def pop_row(handle, table_name, blocking=True, delete=True):
+def pop_row(handle, table_name, delete=True, row_id=None, blocking=True):
   row = None
 
   # if blocking is True, loop until row pulled
   while row is None:
-    q = "SELECT * FROM " + table_name + " LIMIT 1"
+    q = "SELECT * FROM " + table_name
+    
+    # optional: pop specific row
+    if row_id is not None:
+      q += " WHERE id=%s" % (row_id)
+    else:
+      q += " LIMIT 1"
+
+    # execute & get row
     handle[1].execute(q)
     row = handle[1].fetchone()
     if not blocking:

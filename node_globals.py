@@ -13,6 +13,7 @@ NUMBER_OF_NODES = 1
 # PAYLOAD DB
 DB_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
 DB_PAYLOAD_TABLE = 'payload_table'
+DB_POSITIVES_TABLE = 'positives_table'
 
 
 # LOGGING MODULE
