@@ -1,0 +1,21 @@
+#content {
+  position: absolute;
+  top: 300px; bottom: 10%; left: 5%; right: 5%;
+  padding: 10px;
+  background-color: #E5E5E5;
+  overflow-x: hidden;
+  overflow-y: scroll;
+}
+
+.b {
+  font-weight: bold;
+  cursor: pointer;
+}
+
+#pb {
+  color: green;
+}
+
+#nb {
+  color: red;
+}

@@ -4,6 +4,7 @@ import threading
 import Queue
 import os
 from node_globals import *
+import re
 
 
 # timing using "with"
@@ -126,6 +127,16 @@ def flist_to_string(flist):
     string_out += ';'
   return string_out
 
+def string_to_flist(string):
+  flist = []
+  for f in re.split(r';', string):
+    f_split = re.split(r',', f)
+    if len(f_split) == 1:
+      flist.append(float(f_split[0]))
+    else:
+      flist.append(f_split)
+  return flist
+
 
 # --> SIMPLE MYSQL/DB INTERFACE
 
@@ -177,11 +188,21 @@ def insert_row_dict(handle, table_name, row_dict):
 
 
 # pop a row
-def pop_row(handle, table_name):
-  q = "SELECT * FROM " + table_name + " LIMIT 1"
-  handle[1].execute(q)
-  row = handle[1].fetchone()
-  if row is not None:
+def pop_row(handle, table_name, blocking=True, delete=True):
+  row = None
+
+  # if blocking is True, loop until row pulled
+  while row is None:
+    q = "SELECT * FROM " + table_name + " LIMIT 1"
+    handle[1].execute(q)
+    row = handle[1].fetchone()
+    if not blocking:
+      break
+    else:
+      time.sleep(1)
+  
+  # delete pulled row if applicable
+  if delete and row is not None:
     q = "DELETE FROM " + table_name + " WHERE id = %s"
     handle[1].execute(q, (int(row[0]),))
     handle[0].commit()
