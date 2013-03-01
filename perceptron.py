@@ -1,4 +1,6 @@
 import numpy as np
+from Queue import Queue
+import time
 
 # a simple online learning perceptron object:
 #
@@ -9,6 +11,8 @@ import numpy as np
 # - a dynamic margin for deciding whether to solicit user feedback
 #
 # (- use of 'passive-aggressive' algorithm scheme?)
+#
+# * not necessarily thread safe
 
 class Perceptron:
 
@@ -17,6 +21,8 @@ class Perceptron:
     self.token_maps = {}
     self.in_count = 0
     self.true_count = 0
+    self.last_x = []
+
   
   # for handling feature vectors of form e.g. [1.3, 2, ('a', 'b', 'e'), 4]
   def _handle_features_in(self, mixed_features):
@@ -82,8 +88,21 @@ class Perceptron:
     return array_out
 
 
+# NOTE: TO-DO: !!! --> switch it to [0,1] unary rather than [-1,1], i.e. tally up based on
+# positives only, don't get flooded with any negative indicators
+
+# NOTE: TO-DO: count up the occurences of OOVs (new vocab words)- this should effect the
+#       reporting thresh
+
+# NOTE: TO-DO: use dynamic threshold to classify & decide whether to wait for input
+
+
   # primary routine for adding a datum and getting predicted classification back
-  def add_and_classify(self, mixed_features):
+  def classify(self, mixed_features):
+    
+    # block until all params updated from last data point
+    while self.in_count != 0:
+      time.sleep(1)
     
     # log that an input datum was entered
     self.in_count += 1
@@ -92,14 +111,29 @@ class Perceptron:
     x = self._flatten(self._handle_features_in(mixed_features))
     w = self._flatten(self.W)
     score = np.dot(x, w)
+    self.last_x = x
 
-    # NOTE: !!! --> switch it to [0,1] unary rather than [-1,1], i.e. tally up based on
-    # positives only, don't get flooded with any negative indicators
+    return score
 
-    # NOTE: count up the occurences of OOVs (new vocab words)- this should effect the
-    #       reporting thresh
+  
+  def sign(self, x):
+    if x > 0:
+      return 1
+    else:
+      return -1
 
-    # use dynamic threshold to classify & decide whether to wait for input
+
+  def feedback(self, true_class):
+
+    # update params according to feedback using simple perceptron update
+    x = self.last_x
+    w = self._flatten(self.W)
+    if self.sign(np.dot(x, w)) != self.sign(true_class):
+      w += self.sign(true_class)*x
+      self.W = self._unflatten(w, self.W)
+
+    # log that an input datum was completed with feedback returned
+    self.in_count -= 1
 
     
     

@@ -103,11 +103,11 @@ def extract_link_data(html, ref_url, Q_logs=None):
 
 
 # Return the average / longest text string
-# NOTE: to-do: handle divs?  I.e. if at lvl div, text should count... but should end with </div>
+# NOTE: to-do: handle divs specially?  I.e. if at lvl div, text should count... but should end with </div>
 # NOTE: to-do: handle <h\n>?  Look through w3 list of tags and handle all...
-TEXT_TAGS = ["p", "b", "i", "u", "ul", "li", "table", "th", "tr", "td", "tbody", "thead", "tfoot"]
+TEXT_TAGS = ["div", "p", "b", "i", "u", "ul", "li", "table", "th", "tr", "td", "tbody", "thead", "tfoot"]
 SKIP_TAGS = ["br", "hr", "img", "link", "meta", "META", "if", "endif"]
-def calc_LTS(html, Q_logs):
+def calc_LTS(html, Q_logs=None, debug=False):
   ts = 0
   lts = 0
 
@@ -118,6 +118,12 @@ def calc_LTS(html, Q_logs):
   try:
     lvl = ['top'];
     for t in split_html:
+      
+      if debug:
+        print t
+        print lvl
+        print ts
+      
       if t[0] == '<' and t[1] == '/':
         del lvl[-1]
       elif t[0] == '<':

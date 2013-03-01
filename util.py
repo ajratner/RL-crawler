@@ -130,11 +130,10 @@ def flist_to_string(flist):
 def string_to_flist(string):
   flist = []
   for f in re.split(r';', string):
-    f_split = re.split(r',', f)
-    if len(f_split) == 1:
-      flist.append(float(f_split[0]))
+    if re.search(r'\d', f) is not None:
+      flist.append(float(f))
     else:
-      flist.append(f_split)
+      flist.append(re.split(r',', f))
   return flist
 
 

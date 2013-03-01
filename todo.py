@@ -18,6 +18,9 @@
 #   e.g. 'Is there anything here at all??'
 # _ ***how to restart/add new features without ruining work of classifier so far
 # - --> GENERAL RESTART MODULE
+# - refine calc_LTS (& ALL HTML PARSING IN GENERAL...)
+# - ***BATCH VERSION OF CLASSIFIER (i.e. enter pre-labeled data) for TESTING different 
+#   algs/constants, etc.
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK
