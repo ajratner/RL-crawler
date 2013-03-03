@@ -196,7 +196,7 @@ def pop_row(handle, table_name, delete=True, row_id=None, blocking=True):
     
     # optional: pop specific row
     if row_id is not None:
-      q += " WHERE id=%s" % (row_id)
+      q += (" WHERE id=%s" % (row_id))
     else:
       q += " LIMIT 1"
 

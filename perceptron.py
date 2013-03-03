@@ -87,6 +87,18 @@ class Perceptron:
         i += 1
     return array_out
 
+  
+  # a function for displaying an entered features list in flat readbale format with weights
+  def readable_weights(self, mixed_features):
+    w_relevant = [x for x in self._flatten(self.W) if x > 0]
+    x_readable = []
+    for i, f in enumerate(mixed_features):
+      if type(f) == float or type(f) == int:
+        x_readable.append(f)
+      elif type(f) == list or type(f) == tuple:
+        x_readable += [x[1] for x in sorted([(self.token_maps[i][t], t) for t in f])]
+    return x_readable, w_relevant
+
 
 # NOTE: TO-DO: !!! --> switch it to [0,1] unary rather than [-1,1], i.e. tally up based on
 # positives only, don't get flooded with any negative indicators
@@ -124,12 +136,13 @@ class Perceptron:
 
 
   def feedback(self, true_class):
+    tc = int(true_class)
 
     # update params according to feedback using simple perceptron update
     x = self.last_x
     w = self._flatten(self.W)
-    if self.sign(np.dot(x, w)) != self.sign(true_class):
-      w += self.sign(true_class)*x
+    if self.sign(np.dot(x, w)) != self.sign(tc):
+      w += self.sign(tc)*x
       self.W = self._unflatten(w, self.W)
 
     # log that an input datum was completed with feedback returned

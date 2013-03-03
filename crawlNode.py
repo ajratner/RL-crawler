@@ -156,7 +156,7 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
 #
 
 
-TEST_INITIAL_URLS = ['http://www.crecomparex.com', 'http://www.timberintelligence.com', 'http://www.ndacomptool.net', 'http://www.crecomprex.com', 'http://www.crecomparex.com/blah.html']
+TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com', 'http://www.ndacomptool.net', 'http://www.crecomprex.com', 'http://www.crecomparex.com/blah.html']
 
 #
 # --> Command line functionality

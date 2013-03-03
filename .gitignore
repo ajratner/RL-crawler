@@ -2,3 +2,5 @@
 *.swp
 *.bloom
 logs/
+.DS_Store
+batch_tests/

@@ -7,6 +7,21 @@
   <body>
     <b>Extracted from URL: </b> {{ url }}
     <hr />
+    <table>
+      <tr>
+        <td><b>x</b></td>
+        {% for xx in x %}
+          <td>{{ xx }}</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td><b>w</b></td>
+        {% for ww in w %}
+          <td>{{ ww }}</td>
+        {% endfor %}
+      </tr>
+    </table>
+    <hr />
     <b><i>Calculated Features: </i></b> {{ features }}
     <hr />
     <h3>In-class confidence: {{ score }}%</h3>
@@ -14,7 +29,7 @@
     <h2>Extracted content: </h2>
     <div id="buttons">
       <form name="input" action="/" method="POST">
-        <input name="docid" style="display:none;">{{ docid }}</input>
+        <input name="docid" type="hidden" value="{{ docid }}">
         <input name="feedback" id="pb" class="b" type="submit" value="Positive">
         <input name="feedback" id="nb" class="b" type="submit" value="Negative">
       </form>
