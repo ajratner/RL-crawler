@@ -20,7 +20,7 @@ def get_page_text(html):
 # re subfunction for getting page tokens
 def tokens(string):
   if string is not None:
-    return re.findall(r'[A-Za-z]+', string)
+    return [t.lower() for t in re.findall(r'[A-Za-z]+', string)]
   else:
     return []
 
@@ -144,25 +144,50 @@ def calc_LTS(html, Q_logs=None, debug=False):
   return lts
 
 
-# function for analyzing page and returning (A) features & (B) stats to pass on w/ child links
+# function for extracting stats that need to be passed on with child links
+#
+# USED IN: CRAWL NODE
+#
+# takes: html
+#
+# outputs:
+#   - page_stats = (
+#                   #: page_text_len,
+#                   #: num_links,
+#                   [t]: title_tokens
+#                  )
+
+def extract_passed_stats(html, Q_logs=None):
+  pt = get_page_text(html)
+  try:
+    tt = tokens(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
+  except:
+    tt = []
+  ptl = float(len(pt))
+  nl = float(len(re.findall(r'<a\s.*?>', html)))
+  return (ptl, nl, tt)
+  
+
+# function for extracting page features & appropriately normalizing numerical ones
+#
+# USED IN: ANALYSIS NODE
 #
 # takes: 
 #   - html
 #   - parent_page_stats = (page_text_len, num_links, title_tokens, link_title_tokens)
 #
 # outputs:
-#   - page_stats = (page_text_len, num_links, title_tokens)
 #   - page_features = (
-#                       #: rel_page_text_len,
-#                       #: rel_num_links,
-#                       #: longest_text_sequence,
+#                       #,[0,1]: rel_page_text_len,
+#                       #,[0,1]: rel_num_links,
+#                       #,[0,1]: longest_text_sequence,
 #                       [t]: most_frequent_tokens,
 #                       [t]: title_tokens,
 #                       [t]: parent_link_text_tokens,
 #                       [t]: parent_title_tokens 
 #                     )
 
-def analyze_page(html, parent_page_stats, Q_logs=None):
+def extract_features(html, parent_page_stats, Q_logs=None):
   pt = get_page_text(html)
   
   # first calculate stats/features that depend on html only
@@ -174,6 +199,9 @@ def analyze_page(html, parent_page_stats, Q_logs=None):
   nl = float(len(re.findall(r'<a\s.*?>', html)))
   lts = calc_LTS(html, Q_logs)
   mft = mf_words(pt, 20)
+  
+  # we normalize lts assuming a rough avg of 1000 chars / page in a contract...
+  #lts = 
 
   # next handle those dependent on parent page data (for relative measures)
   # NOTE: assume that if this var is none, dealing with seed pages at beginning of crawl
@@ -191,4 +219,4 @@ def analyze_page(html, parent_page_stats, Q_logs=None):
     ref_ltt = []
     ref_tt = []
 
-  return (ptl, nl, tt), (rpt, rnl, lts, mft, tt, ref_ltt, ref_tt)
+  return (rpt, rnl, lts, mft, tt, ref_ltt, ref_tt)

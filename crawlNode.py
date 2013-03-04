@@ -68,16 +68,13 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       html = basic_html_clean(buf.getvalue())
       extracted_urls, link_stats = extract_link_data(html, url, Q_logs)
       
-      # parse page for (A) stats that need to be passed on with child links, (B) page features
-      # if parent_page_stats is None, we will assume the page is one of the seed pages
-      page_stats, page_features = analyze_page(html, parent_page_stats, Q_logs)
-
-      # NOTE: to-do: MINIMAL FIRST-LAYER THRESHOLD CALC/DECISION?
+      # parse page only for stats that need to be passed on with child links
+      page_stats = extract_passed_stats(html)
 
       # add page, url + features list to queue out (-> database / analysis nodes)
       row_dict = {
         'url': url,
-        'features': flist_to_string(page_features),
+        'parent_stats': flist_to_string(parent_page_stats),
         'html': html
       }
       Q_payload.Q_out.put(row_dict)
@@ -156,7 +153,7 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
 #
 
 
-TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com', 'http://www.ndacomptool.net', 'http://www.crecomprex.com', 'http://www.crecomparex.com/blah.html']
+TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com']
 
 #
 # --> Command line functionality

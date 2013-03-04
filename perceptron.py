@@ -109,6 +109,8 @@ class Perceptron:
 # NOTE: TO-DO: use dynamic threshold to classify & decide whether to wait for input
 
 
+# NOTE: IDEA --> some sort of constant for each individual parameter that captures its informational value...
+
   # primary routine for adding a datum and getting predicted classification back
   def classify(self, mixed_features):
     
@@ -129,10 +131,10 @@ class Perceptron:
 
   
   def sign(self, x):
-    if x > 0:
-      return 1
+    if x == 0:
+      return 0
     else:
-      return -1
+      return x/abs(x)
 
 
   def feedback(self, true_class):

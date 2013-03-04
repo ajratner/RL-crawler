@@ -32,14 +32,14 @@ def get_feedback():
         insert_row_dict(handle, DB_POSITIVES_TABLE, row_dict)
 
     # get new datum for feedback
-    # row should be of form [id, url, features_string, html]; do not delete at this step
+    # row should be of form [id, url, parent_stats, html]; do not delete at this step
     row = pop_row(handle, DB_PAYLOAD_TABLE, False)
 
   # extract body html for display
   body_html = re.sub(r'^.*?<body[^>]*>|</body>.*?$', '', row[3], 0, re.DOTALL)
 
-  # run through perceptron to get score- note that this is blocking
-  features = string_to_flist(row[2])
+  # get features and run through perceptron to get score- note that this is blocking
+  features = extract_features(row[3], string_to_flist(row[2]))
   score = p.classify(features)
 
   # get weights for testing display feedback
@@ -51,7 +51,3 @@ def get_feedback():
 
 if __name__ == '__main__':
   app.run(debug=True)
-
-
-# FEATURE PARSING SHOULD BE LOCAL (ON ANALYSIS NODE)??
-# NOTE: TO-DO: consider this...
