@@ -10,6 +10,7 @@ import cStringIO
 import threading
 from pageAnalyze import *
 from node_globals import *
+import signal
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
@@ -18,6 +19,11 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   
   # get page from urlFrontier
   next_pull_time, host_addr, url, parent_page_stats = uf.get_crawl_task()
+
+  # report active url
+  # NOTE: note that there are problems with this methodology, but that errors will only lead
+  # to data redundancy (as opposed to omission)...
+  uf.thread_active[thread_name] = url
 
   if DEBUG_MODE:
     Q_logs.put('%s: got %s from queue' % (thread_name, url))
@@ -55,6 +61,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       pulled = True
     except Exception as e:
       uf.log_and_add_extracted(host_addr, False)
+      task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
       pulled = False
@@ -74,9 +81,10 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       # add page, url + features list to queue out (-> database / analysis nodes)
       row_dict = {
         'url': url,
-        'parent_stats': flist_to_string(parent_page_stats),
         'html': html
       }
+      if parent_page_stats is not None:
+        row_dict['parent_stats'] = flist_to_string(parent_page_stats)
       Q_payload.Q_out.put(row_dict)
 
       # package all data that needs to be passed on with child links
@@ -87,6 +95,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
 
     else:
       uf.log_and_add_extracted(host_addr, False)
+      task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))
 
@@ -117,20 +126,20 @@ class MaintenanceThread(threading.Thread):
 
 
 # main multi-thread crawl routine
-def multithread_crawl(n_threads, n_mthreads, initial_url_list):
+def multithread_crawl(n_threads, n_mthreads, initial_url_list, seen_persist=False):
   
   # instantiate a queue-out-to-logs handler
   Q_logs = Q_out_to_file(LOG_REL_PATH)
   Q_logs.put("\n\nSession Start at %s" % (datetime.datetime.now(),))
 
   # instantiate one urlFontier object for all threads
-  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads, Q_logs)
+  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads, seen_persist, Q_logs)
 
   # initialize the urlFrontier
   uf.initialize(initial_url_list)
 
   # instantiate a queue-out-to-db handler
-  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf.Q_active_count, Q_logs)
+  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(n_threads):
@@ -144,24 +153,33 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list):
     t.setDaemon(True)
     t.start()
 
-  # wait on the active count queue until every extracted or provided url is crawled
-  uf.Q_active_count.join()
+  # main loop waiting on active count Q
+  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % (NODE_NUMBER, NUMBER_OF_NODES, n_threads, n_mthreads)
+  while True:
+    try:
+      time.sleep(1)
+      if uf.Q_active_count.qsize() == 0:
+        break
+    
+    # In case of Ctrl-C, abort; dump queues for restart first
+    except KeyboardInterrupt:
+      uf.dump_for_restart()
+      Q_logs.put("*Session aborted with Ctrl-C!")
+      print 'crawl aborted!'
+      sys.exit(0)
 
-
-#
-# --> UNIT TESTS
-#
-
-
-TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com']
 
 #
 # --> Command line functionality
 #
 if __name__ == '__main__':
-  if sys.argv[1] == 'test' and len(sys.argv) == 2:
-    print '\nTesting on %s NODE(S) with 2 C THREADS & 2 M THREADS:\n' % (NUMBER_OF_NODES)
+  if sys.argv[1] == 'run' and len(sys.argv) == 2:
     multithread_crawl(2, 2, TEST_INITIAL_URLS)
+  elif sys.argv[1] == 'restart' and len(sys.argv) == 2:
+    with open(RESTART_DUMP, 'r') as f:
+      restart_seeds = f.readlines()
+    multithread_crawl(2, 2, restart_seeds, True)
   else:
     print 'Usage: python crawlNode.py ...'
-    print '(1) test'
+    print '(1) run'
+    print '(2) restart'

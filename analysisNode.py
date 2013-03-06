@@ -1,7 +1,7 @@
 from node_globals import *
 from util import *
 from flask import Flask, render_template, request
-from perceptron import Perceptron
+import classifier
 
 
 # instantiate Flask app object
@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 
 # instantiate perceptron classifier object
-p = Perceptron()
+c = classifier.OLClassifier()
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -19,7 +19,7 @@ def get_feedback():
 
     # process feedback on last and add to perceptron object queue WITH UNIQUE ID
     tc = 1 if request.form['feedback'] == 'Positive' else -1
-    p.feedback(tc)
+    loss = c.feedback(tc)
 
   # pop one page from the database (with blocking by default enabled)
   with DB_connection(DB_VARS) as handle:
@@ -40,10 +40,10 @@ def get_feedback():
 
   # get features and run through perceptron to get score- note that this is blocking
   features = extract_features(row[3], string_to_flist(row[2]))
-  score = p.classify(features)
+  score = c.classify(features)
 
   # get weights for testing display feedback
-  x, w = p.readable_weights(features)
+  x, w = c.readable_weights(features)
   
   # return rendered template
   return render_template('analysis.html', docid = int(row[0]), url = row[1], features = row[2], x = x, w = w, score = "%.2f" % (100*score), content = body_html)

@@ -1,5 +1,11 @@
 # node globals
 
+# CRAWL: BOUNDS, CAPS, OVERALL CONTROL
+SEED_LIST = ['http://www.onecle.com/']
+MAX_CRAWLED = 50
+DIST_FROM_SEED = 0
+RESTART_DUMP = 'restart_seed_list'
+
 # CONNECTION / pycurl
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 CURLOPT_TIMEOUT = 60
@@ -38,3 +44,8 @@ BF_FILENAME = 'seen.bloom'
 # CRAWL NODE QUEUE CONSTANTS
 HQ_TO_THREAD_RATIO = 3
 MAX_QUEUE_SIZE = 10000
+
+
+
+# FOR TESTING ---
+TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com']

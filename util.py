@@ -23,15 +23,24 @@ class Timer:
 # instantiates Queue.Queue() which collects items from threads, and then transfers them out
 # will also report task done to global queue if one is passed in
 
+
+# subfunction for killing off a queue to free from a join on it
+def kill_join(Q):
+  while True:
+    record = Q.get()
+    Q.task_done()
+
+
 # for transfer to db
 class PostmanThreadDB(threading.Thread):
-  def __init__(self, Q_out, db_vars, db_table_name, Q_task_done=None, Q_logs=None):
+  def __init__(self, Q_out, db_vars, db_table_name, uf=None, Q_logs=None):
     threading.Thread.__init__(self)
     self.Q_out = Q_out
     self.db_vars = db_vars
     self.db_table_name = db_table_name
-    self.Q_task_done = Q_task_done
+    self.uf = uf
     self.Q_logs = Q_logs
+    self.count_mailed = 0
 
   
   def run(self):
@@ -42,31 +51,53 @@ class PostmanThreadDB(threading.Thread):
         mail_dict = self.Q_out.get()
 
         # insert row into db
-        insert_row_dict(handle, self.db_table_name, mail_dict)
+        if insert_row_dict(handle, self.db_table_name, mail_dict):
         
-        if self.Q_logs is not None:
-          self.Q_logs.put("Postman: "+mail_dict['url']+" html and features payload dropped!")
+          # if success, then log if applicable
+          if self.Q_logs is not None and DEBUG_MODE:
+            self.Q_logs.put("Postman: "+mail_dict['url']+" html and features payload dropped!")
 
-        # report item out success to master joining queue if applicable
-        if self.Q_task_done is not None:
-          self.Q_task_done.task_done()
-          
+        # else log as error if applicable, then pass over
+        else:
           if self.Q_logs is not None:
-            self.Q_logs.put("Active count: " + str(self.Q_task_done.qsize()))
+            self.Q_logs.put("DB ERROR: PAYLOAD DROP FOR "+mail_dict['url']+" FAILED!")
+
+        # NOTE: TO-DO: handle a db error somehow?
+        # for now, both successes and failures count towards total count of mailed
+        self.count_mailed += 1
+
+        # either way report task done to master joining queue if applicable
+        if self.uf is not None:
+
+          # if max pages crawled has been reached, terminate the crawl
+          if self.count_mailed == MAX_CRAWLED:
+            if self.Q_logs is not None:
+              self.Q_logs.put("CRAWL REACHED MAX. TERMINATING...")
+
+            # also dump queues first, as they may not be emptied, to prep for restart
+            self.uf.dump_for_restart()
+            kill_join(self.uf.Q_active_count)
+
+          if self.Q_logs is not None and DEBUG_MODE:
+            self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
+
+          # pull a task record & record done to handle loop & join type blocking
+          task = self.uf.Q_active_count.get()
+          self.uf.Q_active_count.task_done()
     
 
 class Q_out_to_db:
-  def __init__(self, db_vars, db_table_name, Q_task_done=None, Q_logs=None):
+  def __init__(self, db_vars, db_table_name, uf=None, Q_logs=None):
     self.db_vars = db_vars
     self.db_table_name = db_table_name
-    self.Q_task_done = Q_task_done
+    self.uf = uf
     self.Q_logs = Q_logs
 
     # the queue of packages to be sent out
     self.Q_out = Queue.Queue()
 
     # start the 'postman' worker thread
-    t = PostmanThreadDB(self.Q_out, self.db_vars, self.db_table_name, self.Q_task_done, self.Q_logs)
+    t = PostmanThreadDB(self.Q_out, self.db_vars, self.db_table_name, self.uf, self.Q_logs)
     t.setDaemon(True)
     t.start()
 
@@ -128,13 +159,16 @@ def flist_to_string(flist):
   return string_out
 
 def string_to_flist(string):
-  flist = []
-  for f in re.split(r';', string)[:-1]:
-    if re.search(r'\d', f) is not None:
-      flist.append(float(f))
-    else:
-      flist.append([t for t in re.split(r',', f) if t != ''])
-  return flist
+  if string is not None:
+    flist = []
+    for f in re.split(r';', string)[:-1]:
+      if re.search(r'\d', f) is not None:
+        flist.append(float(f))
+      else:
+        flist.append([t for t in re.split(r',', f) if t != ''])
+    return flist
+  else:
+    return None
 
 
 # --> SIMPLE MYSQL/DB INTERFACE

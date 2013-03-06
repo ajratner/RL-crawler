@@ -10,6 +10,7 @@ from nltk.stem.porter import PorterStemmer
 from util import *
 import urlparse
 from node_globals import *
+import numpy as np
 
 
 # re subfunction for returning page text only
@@ -144,6 +145,11 @@ def calc_LTS(html, Q_logs=None, debug=False):
   return lts
 
 
+# a scaled sigmoid+log transform for taking a range <min~10^-1,max~10^1> --> [-1,1]
+def sl_normalize(t):
+  return (2.0/(1 + np.exp(-5.0*np.log10(t)))) - 1
+
+
 # function for extracting stats that need to be passed on with child links
 #
 # USED IN: CRAWL NODE
@@ -197,11 +203,10 @@ def extract_features(html, parent_page_stats, Q_logs=None):
     tt = []
   ptl = float(len(pt))
   nl = float(len(re.findall(r'<a\s.*?>', html)))
-  lts = calc_LTS(html, Q_logs)
   mft = mf_words(pt, 20)
   
   # we normalize lts assuming a rough avg of 1000 chars / page in a contract...
-  #lts = 
+  lts = sl_normalize(calc_LTS(html, Q_logs)/1000.0)
 
   # next handle those dependent on parent page data (for relative measures)
   # NOTE: assume that if this var is none, dealing with seed pages at beginning of crawl
@@ -209,13 +214,13 @@ def extract_features(html, parent_page_stats, Q_logs=None):
     ref_ptl, ref_nl, ref_tt, ref_ltt = parent_page_stats
 
     # calculate & package stats / features
-    rpt = ptl / ref_ptl
-    rnl = nl / ref_nl
+    rpt = sl_normalize(ptl / ref_ptl)
+    rnl = sl_normalize(nl / ref_nl)
   
   # else use default neutral vals- beginning of crawl so doesn't matter much
   else:
-    rpt = 1.0
-    rnl = 1.0
+    rpt = 0.0
+    rnl = 0.0
     ref_ltt = []
     ref_tt = []
 

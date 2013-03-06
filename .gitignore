@@ -4,3 +4,4 @@
 logs/
 .DS_Store
 batch_tests/
+restart_seed_list

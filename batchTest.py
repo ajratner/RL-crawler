@@ -1,6 +1,7 @@
 from util import *
 from node_globals import *
-from perceptron import Perceptron
+from pageAnalyze import *
+import classifier
 import sys
 import os
 import csv
@@ -22,7 +23,7 @@ def populate_test_table():
       row_p = pop_row(handle, DB_PAYLOAD_TABLE, False, i, False)
       if row_p is None:
         break
-      row_t_dict = {'url': row_p[1], 'features': row_p[2], 'tc': -1}
+      row_t_dict = {'url': row_p[1], 'parent_stats': row_p[2], 'html': row_p[3], 'tc': -1}
       insert_row_dict(handle, DB_BATCH_TEST_TABLE, row_t_dict)
       i += 1
 
@@ -37,7 +38,7 @@ def batch_test(filepath_out):
   
   with Timer() as t:
     # perceptron (or other algorithm) object
-    p = Perceptron()
+    c = classifier.OLClassifier()
 
     # loop serially through all the rows of the batch test table, writing results to csv
     with open(fpath, 'wb') as out_file:
@@ -53,36 +54,36 @@ def batch_test(filepath_out):
         # loop through all rows
         while True:
 
-          # get row- rows should be of form (id, url, features_string, true_class)
+          # get row- rows should be of form (id, url, parent_stats, html, true_class)
           row = pop_row(handle, DB_BATCH_TEST_TABLE, False, r, False)
           if row is None:
             break
 
-          # calculate prediction, then updated parameters given provided true class feedback
-          features = string_to_flist(row[2])
-          score = p.classify(features)
-          p.feedback(int(row[3]))
-          data.append([int(row[0]), row[1], score, int(row[3]), p.W])
+          # extract featuresm calculate prediction, then updated parameters given true class
+          features = extract_features(row[3], string_to_flist(row[2]))
+          score = c.classify(features)
+          loss = c.feedback(int(row[4]))
+          data.append([int(row[0]), row[1], score, int(row[4]), loss, c.W])
 
           r += 1
           n_pages += 1
 
       # assemple header row and write to file
-      header = ["db_id", "url", "score", "tc"]
+      header = ["db_id", "url", "score", "tc", "LOSS"]
       for i in range(len(features)):
-        if p.token_maps.has_key(i):
-          header += [k for v,k in sorted([(v,k) for k,v in p.token_maps[i].iteritems()])]
+        if c.token_maps.has_key(i):
+          header += [k for v,k in sorted([(v,k) for k,v in c.token_maps[i].iteritems()])]
         else:
           header.append("NUM")
       out.writerow(header)
 
       # extend all input features to full vector length and insert as rows
       for d in data:
-        row = [d[0], d[1], d[2], d[3]]
-        W = d[4]
+        row = [d[0], d[1], d[2], d[3], d[4]]
+        W = d[5]
         for i in range(len(W)):
-          if p.token_maps.has_key(i):
-            row += W[i] + [0 for j in range(len(p.token_maps[i]) - len(W[i]))]
+          if c.token_maps.has_key(i):
+            row += W[i] + [0 for j in range(len(c.token_maps[i]) - len(W[i]))]
           else:
             row.append(W[i])
         out.writerow(row)

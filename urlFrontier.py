@@ -28,7 +28,7 @@ from node_globals import *
 
 class urlFrontier:
   
-  def __init__(self, node_n, num_nodes, num_threads, Q_logs):
+  def __init__(self, node_n, num_nodes, num_threads, seen_persist, Q_logs=None):
     self.node_n = node_n
     self.num_nodes = num_nodes
     self.num_threads = num_threads
@@ -44,7 +44,14 @@ class urlFrontier:
     
     # seen url check
     # Bloom Filter ~ [ url ]
-    self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
+    if seen_persist:
+      try:
+        self.seen = BloomFilter.open(BF_FILENAME)
+      except:
+        self.Q_logs.put('Error opening bloom filter, creating new one')
+        self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
+    else:
+      self.seen = BloomFilter(BF_CAPACITY, BF_ERROR_RATE, BF_FILENAME)
 
     # DNS Cache
     # { netloc: (host_addr, time_last_checked) }
@@ -58,9 +65,15 @@ class urlFrontier:
     # Priority Queue ~ [ (time_to_delete, host_addr) ]
     self.Q_hq_cleanup = Queue.PriorityQueue()
 
-    # active url count queue
+    # active url count queue- for counting/tracking active
     # Queue ~ [ True ]
     self.Q_active_count = Queue.Queue()
+
+    # thread active url dict- a dict of active urls by thread using, for restart dump
+    # { thread_name: active_url }
+    # NOTE: note that there are problems with this methodology, but that errors will only lead
+    # to data redundancy (as opposed to omission)...
+    self.thread_active = {}
   
 
   # primary routine for getting a crawl task from queue
@@ -266,42 +279,73 @@ class urlFrontier:
     # basic cleaning operations on url
     url = re.sub(r'/$', '', url_in)
 
-    # check if seen
-    if url not in self.seen:
+    # NOTE: do not check if seen, works for restart & assume original seed list is de-duped
 
-      # get host IP address of url
-      url_parts = urlparse.urlsplit(url)
-      host_addr = self._get_and_log_addr(url_parts.netloc)
+    # get host IP address of url
+    url_parts = urlparse.urlsplit(url)
+    host_addr = self._get_and_log_addr(url_parts.netloc)
 
-      if host_addr is not None:
+    if host_addr is not None:
 
-        # check if this address belongs to this node
-        url_node = hash(host_addr) % self.num_nodes
-        if url_node == self.node_n:
+      # check if this address belongs to this node
+      url_node = hash(host_addr) % self.num_nodes
+      if url_node == self.node_n:
 
-          # !log as seen & add to active count
-          self.seen.add(url)
-          self.Q_active_count.put(True)
+        # !log as seen & add to active count
+        self.seen.add(url)
+        self.Q_active_count.put(True)
 
-          if DEBUG_MODE:
-            self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+        if DEBUG_MODE:
+          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
 
-          # add to an existing hq, or create new one & log new crawl task
-          if self.hqs.has_key(host_addr):
-            self.hqs[host_addr].append((url, None))
-          else:
-            self.hqs[host_addr] = []
-            self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
-
-        # else pass along to appropriate node
-        # NOTE: TO-DO!
+        # add to an existing hq, or create new one & log new crawl task
+        if self.hqs.has_key(host_addr):
+          self.hqs[host_addr].append((url, None))
         else:
-          pass
+          self.hqs[host_addr] = []
+          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
 
-      # else if DNS was not resolved
+      # else pass along to appropriate node
       # NOTE: TO-DO!
       else:
-        pass  
+        pass
+
+    # else if DNS was not resolved
+    # NOTE: TO-DO!
+    else:
+      pass  
+
+
+  # routine called on abort (by user interrupt or by MAX_CRAWLED count being reached) to
+  # save current contents of all queues to disk & seen filter flushed for restart
+  def dump_for_restart(self):
+    
+    # get all urls in Q_crawl_tasks, hqs, or Q_overflow_urls
+    # only get urls as these will be re-injected through the initialize method of uf
+    with open(RESTART_DUMP, 'w') as f:
+      for thead_name, url in self.thread_active.iteritems():
+        f.write(url + '\n')
+
+      while self.Q_crawl_tasks.full():
+        try:
+          r = self.Q_crawl_tasks.get(False)
+          f.write(r[2] + '\n')
+        except:
+          break
+
+      for host_addr, paths in self.hqs.iteritems():
+        for path in paths:
+          f.write(path[0] + '\n')
+
+      while self.Q_overflow_urls.full():
+        try:
+          r = self.Q_overflow_urls.get(False)
+          f.write(r[1] + '\n')
+        except:
+          break
+
+    # ensure seen filter file is synced
+    self.seen.sync()
 
 #
 # --> Command line functionality
