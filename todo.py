@@ -7,7 +7,6 @@
 #   to avoid index muddling/confusion
 # - find out what the server footprint of socket is...
 # - robots.txt reader / policy system (ask Matt about this...)
-# - what happens if a crawl thread calls 'get' but fails before calling 'log'?
 # - handle logging/possible re-try of pages that failed to pull... ALSO: detecting whether
 #   entire server might be down, putting url back and putting a long wait time in backq_heap
 # - implement fingerprinting for deduplication?
@@ -16,11 +15,7 @@
 # - DUAL LAYER PERCEPTRON THRESHOLD: have one serially-updating one on analyze node, have
 #   another simpler, low-thresh, less-frequently-updated one doing basic screen on crawl node
 #   e.g. 'Is there anything here at all??'
-# _ ***how to restart/add new features without ruining work of classifier so far
-# - --> GENERAL RESTART MODULE
 # - refine calc_LTS (& ALL HTML PARSING IN GENERAL...)
-# - ***BATCH VERSION OF CLASSIFIER (i.e. enter pre-labeled data) for TESTING different 
-#   algs/constants, etc.
 
 
 # NOTE NOTE --> EFFIENCY GAIN TO-DO/CHECK

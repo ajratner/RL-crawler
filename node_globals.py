@@ -3,7 +3,7 @@
 # CRAWL: BOUNDS, CAPS, OVERALL CONTROL
 SEED_LIST = ['http://www.onecle.com/']
 MAX_CRAWLED = 50
-DIST_FROM_SEED = 0
+MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
 
 # CONNECTION / pycurl

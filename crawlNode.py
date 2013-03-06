@@ -18,7 +18,7 @@ import signal
 def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   
   # get page from urlFrontier
-  next_pull_time, host_addr, url, parent_page_stats = uf.get_crawl_task()
+  next_pull_time, host_addr, url, parent_page_stats, host_seed_dist = uf.get_crawl_task()
 
   # report active url
   # NOTE: note that there are problems with this methodology, but that errors will only lead
@@ -60,7 +60,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       c.perform()
       pulled = True
     except Exception as e:
-      uf.log_and_add_extracted(host_addr, False)
+      uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
@@ -91,10 +91,10 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats])
 
       # log page pull as successful & submit extracted urls + data to url frontier
-      uf.log_and_add_extracted(host_addr, True, t.duration, extracted_url_pkgs)
+      uf.log_and_add_extracted(host_addr, host_seed_dist, True, t.duration, extracted_url_pkgs)
 
     else:
-      uf.log_and_add_extracted(host_addr, False)
+      uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))

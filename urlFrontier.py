@@ -35,11 +35,11 @@ class urlFrontier:
     self.Q_logs = Q_logs
     
     # crawl task Queue
-    # Priority Queue ~ [ (next_pull_time, host_addr, url, ref_page_stats) ]
+    # Priority Queue ~ [ (next_pull_time, host_addr, url, ref_page_stats, seed_dist) ]
     self.Q_crawl_tasks = Queue.PriorityQueue()
 
     # host queue dict
-    # { host_addr: [(url, ref_page_stats), ...] }
+    # { host_addr: [(url, ref_page_stats, seed_dist), ...] }
     self.hqs = {}
     
     # seen url check
@@ -58,7 +58,7 @@ class urlFrontier:
     self.DNScache = {}
 
     # overflow url Queue
-    # Queue ~ [ (host_addr, url, ref_page_stats) ]
+    # Queue ~ [ (host_addr, url, ref_page_stats, seen_dist) ]
     self.Q_overflow_urls = Queue.Queue()
 
     # host queue cleanup Queue
@@ -82,11 +82,11 @@ class urlFrontier:
   
 
   # primary routine to log crawl task done & submit extracted urls
-  def log_and_add_extracted(self, host_addr, success, time_taken=0, url_pkgs=[]):
+  def log_and_add_extracted(self, host_addr, host_seed_dist, success, time_taken=0,url_pkgs=[]):
 
     # add urls to either hq of host_addr or else overflow queue
     for url_pkg in url_pkgs:
-      self._add_extracted_url(host_addr, url_pkg)
+      self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
 
     # handle failure of page pull
     # NOTE: TO-DO!
@@ -115,7 +115,7 @@ class urlFrontier:
 
 
   # subroutine to add a url extracted from a host_addr
-  def _add_extracted_url(self, ref_host_addr, url_pkg):
+  def _add_extracted_url(self, ref_host_addr, ref_seed_dist, url_pkg):
     url_in, ref_page_stats = url_pkg
   
     # basic cleaning operations on url
@@ -144,25 +144,28 @@ class urlFrontier:
             self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
         
         else:
+
+          # first make sure that this url does not exceed max link distance from seed
+          if ref_seed_dist < MAX_SEED_DIST or MAX_SEED_DIST == -1:
           
-          # check if this address belongs to this node
-          url_node = hash(host_addr) % self.num_nodes
-          if url_node == self.node_n:
+            # check if this address belongs to this node
+            url_node = hash(host_addr) % self.num_nodes
+            if url_node == self.node_n:
 
-            # add to overflow queue
-            self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
+              # add to overflow queue
+              self.Q_overflow_urls.put((host_addr, url, ref_page_stats, ref_seed_dist + 1))
 
-            # !log as seen & add to active count
-            self.seen.add(url)
-            self.Q_active_count.put(True)
+              # !log as seen & add to active count
+              self.seen.add(url)
+              self.Q_active_count.put(True)
 
-            if DEBUG_MODE:
-              self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-          
-          # else pass along to appropriate node
-          # NOTE: TO-DO!
-          else:
-            pass
+              if DEBUG_MODE:
+                self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+            
+            # else pass along to appropriate node
+            # NOTE: TO-DO!
+            else:
+              pass
 
       # else if DNS was not resolved
       # NOTE: TO-DO!
@@ -233,19 +236,19 @@ class urlFrontier:
 
   # subroutine for transferring urls from overflow queue to new hq
   def _overflow_to_new_hq(self):
-    host_addr, url, ref_page_stats = self.Q_overflow_urls.get()
+    r = self.Q_overflow_urls.get()
     
     # if hq already exists, recycle- insertion not thread safe
     # NOTE: better way to do this while ensuring thread safety here?
     if self.hqs.has_key(host_addr):
       self.Q_overflow_urls.task_done()
-      self.Q_overflow_urls.put((host_addr, url, ref_page_stats))
+      self.Q_overflow_urls.put(r)
       return False
     else:
       
       # create new empty hq and send seed url to crawl task queue
-      self.hqs[host_addr] = []
-      self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, ref_page_stats))
+      self.hqs[r[0]] = []
+      self.Q_crawl_tasks.put(r.insert(0, datetime.datetime.now()))
       return True
   
 
@@ -298,12 +301,14 @@ class urlFrontier:
         if DEBUG_MODE:
           self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
 
-        # add to an existing hq, or create new one & log new crawl task
+        # add to an existing hq, or create new one & log new crawl task, or add to overflow
         if self.hqs.has_key(host_addr):
-          self.hqs[host_addr].append((url, None))
-        else:
+          self.hqs[host_addr].append((url, None, 0))
+        elif len(self.hqs) < HQ_TO_THREAD_RATIO*self.num_threads:
           self.hqs[host_addr] = []
-          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None))
+          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None, 0))
+        else:
+          self.Q_overflow_urls.put((host_addr, url, None, 0))
 
       # else pass along to appropriate node
       # NOTE: TO-DO!
