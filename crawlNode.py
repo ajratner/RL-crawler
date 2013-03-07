@@ -174,7 +174,7 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list, seen_persist=Fals
 #
 if __name__ == '__main__':
   if sys.argv[1] == 'run' and len(sys.argv) == 2:
-    multithread_crawl(2, 2, TEST_INITIAL_URLS)
+    multithread_crawl(2, 2, SEED_LIST)
   elif sys.argv[1] == 'restart' and len(sys.argv) == 2:
     with open(RESTART_DUMP, 'r') as f:
       restart_seeds = f.readlines()

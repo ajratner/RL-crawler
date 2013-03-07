@@ -1,6 +1,7 @@
 import numpy as np
 from Queue import Queue
 import time
+from node_globals import *
 
 # a simple online learning perceptron object:
 #
@@ -14,7 +15,6 @@ import time
 #
 # * not necessarily thread safe
 
-AGGRESSIVE_PARAM = 0.1
 
 class OLClassifier:
 
@@ -52,7 +52,7 @@ class OLClassifier:
 
         # append whole new row to W if initial conditions
         if len(self.W) <= i:
-          self.W.append([0.0 for j in f])
+          self.W.append([0.0 for j in range(len(self.token_maps[i]))])
 
         # else append existing row accordingly
         else:
@@ -147,6 +147,12 @@ class OLClassifier:
     self.in_count -= 1
 
     return loss
+
+
+  def skip_feedback(self):
+
+    # log that an input datum was completed with feedback returned
+    self.in_count -= 1
 
     
     

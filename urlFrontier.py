@@ -103,8 +103,8 @@ class urlFrontier:
     if len(self.hqs[host_addr]) > 0:
 
       # add task to crawl task queue
-      url, ref_page_stats = self.hqs[host_addr].pop()
-      self.Q_crawl_tasks.put((next_time, host_addr, url, ref_page_stats))
+      r = self.hqs[host_addr].pop()
+      self.Q_crawl_tasks.put((next_time, host_addr) + r)
 
     # else if empty, add task to cleanup queue
     else:
@@ -134,7 +134,7 @@ class urlFrontier:
         # if this is an internal link, send directly to the serving hq
         # NOTE: need to check that equality operator is sufficient here!
         if host_addr == ref_host_addr:
-          self.hqs[host_addr].append((url, ref_page_stats))
+          self.hqs[host_addr].append((url, ref_page_stats, ref_seed_dist))
 
           # !log as seen & add to active count
           self.seen.add(url)

@@ -32,7 +32,7 @@ STOP_TOKENS = ["this", "that", "shall", "under", "with", "other", "within", "fro
 
 
 # return most frequent non-stop/small words as list
-def mf_words(pg_txt, n):
+def mf_words(pg_txt, n=None):
   c = Counter([t.lower() for t in tokens(pg_txt) if len(t) > 3])
   for sw in STOP_TOKENS:
     del c[sw]
@@ -98,7 +98,7 @@ def extract_link_data(html, ref_url, Q_logs=None):
         urls.append(link_url)
 
         # url data: (link_text_tokens)
-        url_data.append((tokens(link.group(2)),))
+        url_data.append((mf_words(link.group(2)),))
   
   return urls, url_data
 
@@ -106,8 +106,8 @@ def extract_link_data(html, ref_url, Q_logs=None):
 # Return the average / longest text string
 # NOTE: to-do: handle divs specially?  I.e. if at lvl div, text should count... but should end with </div>
 # NOTE: to-do: handle <h\n>?  Look through w3 list of tags and handle all...
-TEXT_TAGS = ["div", "p", "b", "i", "u", "ul", "li", "table", "th", "tr", "td", "tbody", "thead", "tfoot"]
-SKIP_TAGS = ["br", "hr", "img", "link", "meta", "META", "if", "endif"]
+TEXT_TAGS = ["div", "p", "b", "i", "u", "em", "strong", "ul", "li", "pre", "article", "blockquote", "body", "table", "th", "tr", "td", "tbody", "thead", "tfoot", "h1", "h2", "h3", "h4", "h5", "h6"]
+SKIP_TAGS = ["br", "hr", "img", "link", "meta", "META", "if", "endif", "wbr"]
 def calc_LTS(html, Q_logs=None, debug=False):
   ts = 0
   lts = 0
@@ -147,7 +147,10 @@ def calc_LTS(html, Q_logs=None, debug=False):
 
 # a scaled sigmoid+log transform for taking a range <min~10^-1,max~10^1> --> [-1,1]
 def sl_normalize(t):
-  return (2.0/(1 + np.exp(-5.0*np.log10(t)))) - 1
+  if t > 0:
+    return (2.0/(1 + np.exp(-5.0*np.log10(t)))) - 1
+  else:
+    return -1
 
 
 # function for extracting stats that need to be passed on with child links
@@ -166,7 +169,7 @@ def sl_normalize(t):
 def extract_passed_stats(html, Q_logs=None):
   pt = get_page_text(html)
   try:
-    tt = tokens(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
+    tt = mf_words(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
   except:
     tt = []
   ptl = float(len(pt))
@@ -198,7 +201,7 @@ def extract_features(html, parent_page_stats, Q_logs=None):
   
   # first calculate stats/features that depend on html only
   try:
-    tt = tokens(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
+    tt = mf_words(re.search(r'<title[^>]*>(.*?)</title>', html).group(1))
   except:
     tt = []
   ptl = float(len(pt))

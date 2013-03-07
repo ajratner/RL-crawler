@@ -1,4 +1,5 @@
 from node_globals import *
+from pageAnalyze import *
 from util import *
 from flask import Flask, render_template, request
 import classifier
@@ -30,6 +31,12 @@ def get_feedback():
       if tc == 1:
         row_dict = {'url': row[1], 'html': row[3]}
         insert_row_dict(handle, DB_POSITIVES_TABLE, row_dict)
+      
+      # use feedback to populate a batch testing table for later classifier testing
+      if FILL_BATCH_TEST:
+        row_dict = {'url': row[1], 'parent_stats': row[2], 'html': row[3], 'tc': tc}
+        insert_row_dict(handle, DB_BATCH_TEST_TABLE, row_dict)
+
 
     # get new datum for feedback
     # row should be of form [id, url, parent_stats, html]; do not delete at this step
