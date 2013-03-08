@@ -10,7 +10,6 @@ import cStringIO
 import threading
 from pageAnalyze import *
 from node_globals import *
-import signal
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
