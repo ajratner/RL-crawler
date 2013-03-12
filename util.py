@@ -5,6 +5,8 @@ import Queue
 import os
 from node_globals import *
 import re
+import pickle
+import urlparse
 
 
 # timing using "with"
@@ -31,7 +33,89 @@ def kill_join(Q):
     Q.task_done()
 
 
-# for transfer to db
+# FOR MESSAGING/TRANSFER BETWEEN NODES using simple socket datagram --
+class MsgListener(threading.Thread):
+  def __init__(self, uf=None, Q_logs=None):
+    threading.Thread.__init__(self)
+    self.uf = uf
+    self.Q_logs = Q_logs
+
+  def run(self):
+    
+    # bind a socket to the default port
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("", DEFAULT_IN_PORT))
+    while True:
+
+      # receive data and place into urlFrontier via Q_overflow_urls
+      data, addr = s.recvfrom(MSG_BUF_SIZE)
+      url, seed_dist, parent_page_stats = pickle.loads(data)
+      
+      if uf is not None:
+
+        # get host addr, check against seen filter of this node, add to overlflow_urls, update
+        # urlFrontier active count, add to this node's seen filter, record in log if debug mode
+        if DEBUG_MODE and self.Q_logs is not None:
+          self.Q_logs.put("Received %s from %s" % (url, addr))
+        if url not in uf.seen:
+          uf.seen.add(url)
+          url_parts = urlparse.urlsplit(url)
+          host_addr = uf._get_and_log_addr(url_parts.netloc)
+          self.uf.Q_overflow_urls.put((host_addr, url, parent_page_stats, seed_dist))
+          self.uf.Q_active_count.put(True)
+
+      # FOR TESTING:
+      else:
+        print url
+
+
+class MsgSender(threading.Thread):
+  def __init__(self, Q_out, Q_logs=None):
+    threading.Thread.__init__(self)
+    self.Q_out = Q_out
+    self.Q_logs = Q_logs
+
+  def run(self):
+    while True:
+
+      # get a message to be sent from the queue
+      # of the form: (node_num_to, url, seed_dist, parent_page_stats)
+      node_num_to, url, seed_dist, parent_page_stats = self.Q_out.get()
+      host_to = NODE_ADDRESSES[int(node_num_to)]
+      data = pickle.dumps((url, seed_dist, parent_page_stats))
+    
+      # bind a socket to the default port
+      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s.bind(("", DEFAULT_OUT_PORT))
+
+      # send message
+      s.sendto(data, (host_to, DEFAULT_IN_PORT))
+      if DEBUG_MODE and self.Q_logs is not None:
+        self.Q_logs.put("%s sent to node %s", (url, node_num_to))
+
+
+class Q_out_to_nodes:
+  def __init__(self, uf=None, Q_logs=None):
+    self.uf = uf
+    self.Q_logs = Q_logs
+    
+    # Queue of messages to be sent to other nodes
+    # Queue ~ [ (node_num_to, url, seed_dist, parent_page_stats) ]
+    self.Q_out = Queue.Queue()
+
+    # start a listener thread and a sender thread
+    tl = MsgListener(self.uf, self.Q_logs)
+    tl.setDaemon(True)
+    tl.start()
+    ts = MsgSender(self.Q_out, self.Q_logs)
+    ts.setDaemon(True)
+    ts.start()
+
+  def send(self, pkg):
+    self.Q_out.put(pkg)    
+
+
+# FOR TRANSFER TO DB --
 class PostmanThreadDB(threading.Thread):
   def __init__(self, Q_out, db_vars, db_table_name, uf=None, Q_logs=None):
     threading.Thread.__init__(self)
@@ -105,7 +189,7 @@ class Q_out_to_db:
     self.Q_out.put(row_dict)
 
 
-# for transfer to file
+# FOR TRANSFER TO FILE --
 class PostmanThreadFile(threading.Thread):
   def __init__(self, Q_out, fpath, Q_task_done=None):
     threading.Thread.__init__(self)

@@ -6,6 +6,7 @@ MAX_CRAWLED = 50
 MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
 
+
 # CONNECTION / pycurl
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 CURLOPT_TIMEOUT = 60
@@ -14,6 +15,15 @@ CURLOPT_TIMEOUT = 60
 # NODE ID / NETWORK
 NODE_NUMBER = 0
 NUMBER_OF_NODES = 1
+NODE_ADDRESSES = ['54.225.229.185', 'ec2-50-19-47-177.compute-1.amazonaws.com']
+# NOTE: ordered!
+DISTR_ON_FULL_URL = False
+
+
+# INTER-NODE MESSAGING DETAILED PARAMS
+DEFAULT_IN_PORT = 8081
+DEFAULT_OUT_PORT = 0
+MSG_BUF_SIZE = 1024
 
 
 # PAYLOAD DB
