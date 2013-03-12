@@ -52,16 +52,16 @@ class MsgListener(threading.Thread):
       data, addr = s.recvfrom(MSG_BUF_SIZE)
       url, seed_dist, parent_page_stats = pickle.loads(data)
       
-      if uf is not None:
+      if self.uf is not None:
 
         # get host addr, check against seen filter of this node, add to overlflow_urls, update
         # urlFrontier active count, add to this node's seen filter, record in log if debug mode
         if DEBUG_MODE and self.Q_logs is not None:
           self.Q_logs.put("Received %s from %s" % (url, addr))
-        if url not in uf.seen:
-          uf.seen.add(url)
+        if url not in self.uf.seen:
+          self.uf.seen.add(url)
           url_parts = urlparse.urlsplit(url)
-          host_addr = uf._get_and_log_addr(url_parts.netloc)
+          host_addr = self.uf._get_and_log_addr(url_parts.netloc)
           self.uf.Q_overflow_urls.put((host_addr, url, parent_page_stats, seed_dist))
           self.uf.Q_active_count.put(True)
 
