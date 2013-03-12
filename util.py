@@ -7,6 +7,7 @@ from node_globals import *
 import re
 import pickle
 import urlparse
+import socket
 
 
 # timing using "with"
