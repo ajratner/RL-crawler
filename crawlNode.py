@@ -148,13 +148,13 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
   Q_logs.put("\n\nSession Start at %s" % (datetime.datetime.now(),))
 
   # instantiate a node message sender
-  Q_message_sender = Q_message_sender(Q_logs)
+  Q_ms = Q_message_sender(Q_logs)
 
   # instantiate one urlFontier object for all threads
-  uf = urlFrontier(node_n, seen_persist, Q_message_sender, Q_logs)
+  uf = urlFrontier(node_n, seen_persist, Q_ms, Q_logs)
 
   # instantiate a node message receiver now that urlFrontier is initialized with seed list
-  Q_message_receiver = Q_message_receiver(uf, Q_logs)
+  Q_mr = Q_message_receiver(uf, Q_logs)
 
   # wait an optional start delay time while still receiving messages to active uf
   time.sleep(NODE_START_DELAY)
@@ -177,7 +177,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
     t.setDaemon(True)
     t.start()
 
-  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % (node_n, NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
+  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
   print 'NOTE: Abort by Ctrl-C will take up to %s seconds to respond' % (ACTIVITY_CHECK_P,)
 
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
@@ -191,7 +191,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
           'active_count': uf.Q_active_count.qsize(), 
           'rcount': Q_message_receiver.rcount,
           'scount': uf.Q_message_sender.scount }
-        insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, node_n, row_dict)
+        insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
 
         time.sleep(ACTIVITY_CHECK_P/10.0)
 
@@ -217,13 +217,13 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 # --> Command line functionality
 #
 if __name__ == '__main__':
-  if sys.argv[1] == 'run' and len(sys.argv) == 3:
-    multithread_crawl(int(sys.argv[2]), SEED_LIST)
-  elif sys.argv[1] == 'restart' and len(sys.argv) == 3:
+  if sys.argv[1] == 'run' and len(sys.argv) == 2:
+    multithread_crawl(NODE_ID, SEED_LIST)
+  elif sys.argv[1] == 'restart' and len(sys.argv) == 2:
     with open(RESTART_DUMP, 'r') as f:
       restart_seeds = f.readlines()
-    multithread_crawl(int(sys.argv[2]), restart_seeds, True)
+    multithread_crawl(NODE_ID, restart_seeds, True)
   else:
     print 'Usage: python crawlNode.py ...'
-    print '(1) run <node_n>'
-    print '(2) restart <node_n>'
+    print '(1) run'
+    print '(2) restart'

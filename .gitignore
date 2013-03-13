@@ -1,7 +1,7 @@
 *.pyc
 *.swp
 *.bloom
-logs/
+logs/log
 .DS_Store
 batch_tests/
 restart_seed_list

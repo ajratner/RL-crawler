@@ -3,7 +3,6 @@ import re
 import MySQLdb as mdb
 import pycurl
 import cStringIO
-import bs4
 from collections import Counter
 from util import *
 import urlparse
