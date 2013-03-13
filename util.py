@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import time
 import MySQLdb as mdb
 import threading

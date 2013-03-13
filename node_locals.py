@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # individual node-specific params
 
 NODE_ID = 0

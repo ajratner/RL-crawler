@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from util import *
 from node_globals import *
 from node_locals import *

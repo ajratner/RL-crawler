@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from node_globals import *
 from node_locals import *
 from pageAnalyze import *

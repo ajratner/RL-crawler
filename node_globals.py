@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # node globals
 
 # CRAWL: BOUNDS, CAPS, OVERALL CONTROL

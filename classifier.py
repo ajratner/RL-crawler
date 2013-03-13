@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 from Queue import Queue
 import time
