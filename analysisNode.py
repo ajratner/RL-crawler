@@ -1,4 +1,5 @@
 from node_globals import *
+from node_locals import *
 from pageAnalyze import *
 from util import *
 from flask import Flask, render_template, request

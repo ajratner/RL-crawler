@@ -1,5 +1,6 @@
 from util import *
 from node_globals import *
+from node_locals import *
 from pageAnalyze import *
 import classifier
 import sys

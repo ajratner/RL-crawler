@@ -10,6 +10,8 @@ import cStringIO
 import threading
 from pageAnalyze import *
 from node_globals import *
+from node_locals import *
+import numpy as np
 
 
 # basic routine for crawling a single page from url Frontier, extracting links, logging/adding
@@ -160,6 +162,9 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
   # instantiate a queue-out-to-db handler
   Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
 
+  # wait an optional start delay time while still receiving messages to active uf
+  time.sleep(NODE_START_DELAY)
+
   # spawn a pool of daemon CrawlThread threads
   for i in range(NUMBER_OF_CTHREADS):
     t = CrawlThread(uf, Q_payload, Q_logs)
@@ -172,14 +177,34 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
     t.setDaemon(True)
     t.start()
 
-  # main loop waiting on active count Q
   print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % (node_n, NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
+  print 'NOTE: Abort by Ctrl-C will take up to %s seconds to respond' % (ACTIVITY_CHECK_P,)
+
+  # main loop- waits for node active count queues to be empty & all inter-node messaging done
   while True:
     try:
-      time.sleep(1)
-      if uf.Q_active_count.qsize() == 0:
-        break
-    
+      time.sleep(ACTIVITY_CHECK_P)
+
+      # send updated info to activity monitor table of central db
+      with DB_connection(DB_VARS) as handle:
+        row_dict = {
+          'active_count': uf.Q_active_count.qsize(), 
+          'rcount': Q_message_receiver.rcount,
+          'scount': uf.Q_message_sender.scount }
+        insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, node_n, row_dict)
+
+        time.sleep(ACTIVITY_CHECK_P/10.0)
+
+        # check activity monitor db for global stop conditions
+        node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE)
+
+        # if all node active counts == 0 and total sent == total received, then stop
+        nr_sums = np.sum(np.array(node_rows_), 0)
+        if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3]:
+          Q_logs.put("crawl completed at %s", (datetime.datetime.now(),))
+          print 'crawl completed!'
+          sys.exit(0)
+
     # In case of Ctrl-C, abort; dump queues for restart first
     except KeyboardInterrupt:
       uf.dump_for_restart()

@@ -4,6 +4,7 @@ import threading
 import Queue
 import os
 from node_globals import *
+from node_locals import *
 import re
 import pickle
 import urlparse
@@ -36,10 +37,11 @@ def kill_join(Q):
 
 # FOR MESSAGING/TRANSFER BETWEEN NODES using simple socket datagram --
 class MsgReceiver(threading.Thread):
-  def __init__(self, uf=None, Q_logs=None):
+  def __init__(self, rcount, uf=None, Q_logs=None):
     threading.Thread.__init__(self)
     self.uf = uf
     self.Q_logs = Q_logs
+    self.rcount = rcount
 
   def run(self):
     
@@ -52,6 +54,7 @@ class MsgReceiver(threading.Thread):
       data, addr = s.recvfrom(MSG_BUF_SIZE)
       data_tuple = pickle.loads(data)
       url = data_tuple[0]
+      self.rcount += 1
       
       if self.uf is not None:
 
@@ -75,18 +78,20 @@ class Q_message_receiver:
   def __init__(self, uf=None, Q_logs=None):
     self.uf = uf
     self.Q_logs = Q_logs
+    self.rcount = 0
 
     # start a receiver thread
-    tr = MsgReceiver(self.uf, self.Q_logs)
+    tr = MsgReceiver(self.rcount, self.uf, self.Q_logs)
     tr.setDaemon(True)
     tr.start()
 
 
 class MsgSender(threading.Thread):
-  def __init__(self, Q_out, Q_logs=None):
+  def __init__(self, scount, Q_out, Q_logs=None):
     threading.Thread.__init__(self)
     self.Q_out = Q_out
     self.Q_logs = Q_logs
+    self.scount = scount
 
   def run(self):
     while True:
@@ -106,18 +111,20 @@ class MsgSender(threading.Thread):
       s.sendto(data, (host_to, DEFAULT_IN_PORT))
       if DEBUG_MODE and self.Q_logs is not None:
         self.Q_logs.put("%s sent to node %s", (data_tuple[1], node_num_to))
+      self.scount += 1
 
 
 class Q_message_sender:
   def __init__(self, Q_logs=None):
     self.Q_logs = Q_logs
+    self.scount = 0
     
     # Queue of messages to be sent to other nodes
     # Queue ~ [ (node_num_to, url, seed_dist, parent_page_stats) ]
     self.Q_out = Queue.Queue()
 
     # start a sender thread
-    ts = MsgSender(self.Q_out, self.Q_logs)
+    ts = MsgSender(self.scount, self.Q_out, self.Q_logs)
     ts.setDaemon(True)
     ts.start()
 
@@ -342,4 +349,27 @@ def pop_row(handle, table_name, delete=True, row_id=None, blocking=True):
     handle[1].execute(q, (int(row[0]),))
     handle[0].commit()
   return row
-  
+
+
+# insert or update row by id with dict
+def insert_or_update(handle, table_name, row_id, row_dict):
+  q = "INSERT INTO " + table_name + " (id, " + ', '.join(row_dict.keys()) + ") VALUES (" + ', '.join(["%s" for i in range(len(row_dict) + 1)]) + ") ON DUPLICATE KEY UPDATE " + ', '.join(["%s = %s" % (k, v) for k,v in row_dict.iteritems()])
+  q_vals = row_dict.values()
+  q_vals.insert(0, row_id)
+  try:
+    handle[1].execute(q, tuple(q_vals))
+    handle[0].commit()
+    return True
+  except mdb.Error, e:
+    print e
+    handle[0].rollback()
+    return False
+
+
+# get n (or ALL if n is None) rows
+def get_rows(handle, table_name, n=None):
+  q = "SELECT * FROM " + table_name
+  if n is not None:
+    q += (" LIMIT %s" % (int(n),))
+  handle[1].execute(q)
+  return handle[1].fetchall()

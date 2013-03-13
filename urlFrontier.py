@@ -10,6 +10,7 @@ import Queue
 import re
 from pybloomfilter import BloomFilter
 from node_globals import *
+from node_locals import *
 
 
 # url frontier object at a node #[nodeN] of [numNodes]
@@ -251,7 +252,8 @@ class urlFrontier:
       
       # create new empty hq and send seed url to crawl task queue
       self.hqs[r[0]] = []
-      self.Q_crawl_tasks.put(r.insert(0, datetime.datetime.now()))
+      r.insert(0, datetime.datetime.now())
+      self.Q_crawl_tasks.put(r)
       return True
   
 

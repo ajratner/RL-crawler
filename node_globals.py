@@ -1,7 +1,6 @@
 # node globals
 
 # CRAWL: BOUNDS, CAPS, OVERALL CONTROL
-SEED_LIST = ['http://www.onecle.com/']
 MAX_CRAWLED = 50
 MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
@@ -13,7 +12,6 @@ SAFE_PAGE_TYPES = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?)$'
 
 
 # CONNECTION / pycurl
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 CURLOPT_TIMEOUT = 60
 
 
@@ -32,8 +30,12 @@ DEFAULT_OUT_PORT = 0
 MSG_BUF_SIZE = 1024
 
 
+# NODE CONTROL PARAMS
+DB_NODE_ACTIVITY_TABLE = 'activity_monitor'
+ACTIVITY_CHECK_P = 60
+
+
 # PAYLOAD DB
-DB_VARS = ('localhost', 'root', 'penguin25', 'crawler_test')
 DB_PAYLOAD_TABLE = 'payload_table'
 DB_POSITIVES_TABLE = 'positives_table'
 
@@ -70,7 +72,3 @@ FILL_BATCH_TEST = False
 # BINARY RELEVANCE CLASSIFIER
 AGGRESSIVE_PARAM = 1
 FEEDBACK_THRESH = True
-
-
-# FOR TESTING ---
-TEST_INITIAL_URLS = ['http://www.ipcontractcomp.com', 'http://www.crecomparex.com']

@@ -8,6 +8,7 @@ from collections import Counter
 from util import *
 import urlparse
 from node_globals import *
+from node_locals import *
 import numpy as np
 
 

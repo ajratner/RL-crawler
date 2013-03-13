@@ -2,6 +2,7 @@ import numpy as np
 from Queue import Queue
 import time
 from node_globals import *
+from node_locals import *
 
 # a simple online learning perceptron object:
 #
