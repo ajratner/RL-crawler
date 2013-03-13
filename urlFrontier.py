@@ -33,6 +33,7 @@ class urlFrontier:
     self.node_n = node_n
     self.Q_message_sender = Q_message_sender
     self.Q_logs = Q_logs
+    self.total_crawled = 0
     
     # crawl task Queue
     # Priority Queue ~ [ (next_pull_time, host_addr, url, parent_page_stats, seed_dist, parent_url) ]
@@ -84,14 +85,14 @@ class urlFrontier:
   # primary routine to log crawl task done & submit extracted urls
   def log_and_add_extracted(self, host_addr, host_seed_dist, success, time_taken=0,url_pkgs=[]):
 
-    # add urls to either hq of host_addr or else overflow queue
-    for url_pkg in url_pkgs:
-      self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
-
     # handle failure of page pull
     # NOTE: TO-DO!
     if not success:
       pass
+
+    # add urls to either hq of host_addr or else overflow queue
+    for url_pkg in url_pkgs:
+      self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
 
     # calculate time delay based on success
     now = datetime.datetime.now()
@@ -117,6 +118,11 @@ class urlFrontier:
   # subroutine to add a url extracted from a host_addr
   def _add_extracted_url(self, ref_host_addr, ref_seed_dist, url_pkg):
     url_in, ref_page_stats, parent_url = url_pkg
+
+    # check for MAX_CRAWLED limit --> ADD NO MORE URLS IF TOTAL COUNT IS AT MAX
+    if self.total_crawled > MAX_CRAWLED:
+      self.Q_logs.put("Max crawled limit reached!")
+      return False
   
     # basic cleaning operations on url
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
@@ -157,8 +163,9 @@ class urlFrontier:
     if seed_dist == ref_seed_dist:
       self.hqs[host_addr].append((url, ref_page_stats, seed_dist, parent_url))
 
-      # add to active count
+      # add to active count & update total count
       self.Q_active_count.put(True)
+      self.total_crawled += 1
       if DEBUG_MODE:
         self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
     
@@ -170,6 +177,7 @@ class urlFrontier:
 
       # add to active count
       self.Q_active_count.put(True)
+      self.total_crawled += 1
       if DEBUG_MODE:
         self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
 
@@ -314,6 +322,7 @@ class urlFrontier:
 
     # add to an existing hq, or create new one & log new crawl task, or add to overflow
     self.Q_active_count.put(True)
+    self.total_crawled += 1
     if DEBUG_MODE:
       self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
     if self.hqs.has_key(host_addr):

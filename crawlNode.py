@@ -153,17 +153,17 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
   # instantiate one urlFontier object for all threads
   uf = urlFrontier(node_n, seen_persist, Q_message_sender, Q_logs)
 
-  # initialize the urlFrontier
-  uf.initialize(initial_url_list)
-
   # instantiate a node message receiver now that urlFrontier is initialized with seed list
   Q_message_receiver = Q_message_receiver(uf, Q_logs)
+
+  # wait an optional start delay time while still receiving messages to active uf
+  time.sleep(NODE_START_DELAY)
 
   # instantiate a queue-out-to-db handler
   Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
 
-  # wait an optional start delay time while still receiving messages to active uf
-  time.sleep(NODE_START_DELAY)
+  # initialize the urlFrontier
+  uf.initialize(initial_url_list)
 
   # spawn a pool of daemon CrawlThread threads
   for i in range(NUMBER_OF_CTHREADS):
