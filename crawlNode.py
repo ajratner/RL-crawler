@@ -17,7 +17,7 @@ from node_globals import *
 def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   
   # get page from urlFrontier
-  next_pull_time, host_addr, url, parent_page_stats, host_seed_dist = uf.get_crawl_task()
+  next_pull_time,host_addr,url,parent_page_stats,host_seed_dist,parent_url = uf.get_crawl_task()
 
   # report active url
   # NOTE: note that there are problems with this methodology, but that errors will only lead
@@ -84,10 +84,24 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       }
       if parent_page_stats is not None:
         row_dict['parent_stats'] = flist_to_string(parent_page_stats)
+      if parent_url is not None:
+        row_dict['parent_url'] = parent_url
       Q_payload.Q_out.put(row_dict)
 
       # package all data that needs to be passed on with child links
-      extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats])
+      # the data format of extracted link packages will be:
+      #
+      # url_pkg = ( url, parent_page_stats, parent_url )
+      #
+      # with:
+      #
+      # parent_page_stats = (
+      #                       #: page_text_len,
+      #                       #: num_links,
+      #                       [t]: title_tokens,
+      #                       [t]: link_title_tokens
+      #                     )
+      extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats], url)
 
       # log page pull as successful & submit extracted urls + data to url frontier
       uf.log_and_add_extracted(host_addr, host_seed_dist, True, t.duration, extracted_url_pkgs)
@@ -125,35 +139,41 @@ class MaintenanceThread(threading.Thread):
 
 
 # main multi-thread crawl routine
-def multithread_crawl(n_threads, n_mthreads, initial_url_list, seen_persist=False):
+def multithread_crawl(node_n, initial_url_list, seen_persist=False):
   
   # instantiate a queue-out-to-logs handler
   Q_logs = Q_out_to_file(LOG_REL_PATH)
   Q_logs.put("\n\nSession Start at %s" % (datetime.datetime.now(),))
 
+  # instantiate a node message sender
+  Q_message_sender = Q_message_sender(Q_logs)
+
   # instantiate one urlFontier object for all threads
-  uf = urlFrontier(NODE_NUMBER, NUMBER_OF_NODES, n_threads, seen_persist, Q_logs)
+  uf = urlFrontier(node_n, seen_persist, Q_message_sender, Q_logs)
 
   # initialize the urlFrontier
   uf.initialize(initial_url_list)
+
+  # instantiate a node message receiver now that urlFrontier is initialized with seed list
+  Q_message_receiver = Q_message_receiver(uf, Q_logs)
 
   # instantiate a queue-out-to-db handler
   Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
 
   # spawn a pool of daemon CrawlThread threads
-  for i in range(n_threads):
+  for i in range(NUMBER_OF_CTHREADS):
     t = CrawlThread(uf, Q_payload, Q_logs)
     t.setDaemon(True)
     t.start()
 
   # spawn a pool of daemon MaintenanceThread threads
-  for i in range(n_mthreads):
+  for i in range(NUMBER_OF_MTHREADS):
     t = MaintenanceThread(uf)
     t.setDaemon(True)
     t.start()
 
   # main loop waiting on active count Q
-  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % (NODE_NUMBER, NUMBER_OF_NODES, n_threads, n_mthreads)
+  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % (node_n, NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
   while True:
     try:
       time.sleep(1)
@@ -172,13 +192,13 @@ def multithread_crawl(n_threads, n_mthreads, initial_url_list, seen_persist=Fals
 # --> Command line functionality
 #
 if __name__ == '__main__':
-  if sys.argv[1] == 'run' and len(sys.argv) == 2:
-    multithread_crawl(2, 2, SEED_LIST)
-  elif sys.argv[1] == 'restart' and len(sys.argv) == 2:
+  if sys.argv[1] == 'run' and len(sys.argv) == 3:
+    multithread_crawl(int(sys.argv[2]), SEED_LIST)
+  elif sys.argv[1] == 'restart' and len(sys.argv) == 3:
     with open(RESTART_DUMP, 'r') as f:
       restart_seeds = f.readlines()
-    multithread_crawl(2, 2, restart_seeds, True)
+    multithread_crawl(int(sys.argv[2]), restart_seeds, True)
   else:
     print 'Usage: python crawlNode.py ...'
-    print '(1) run'
-    print '(2) restart'
+    print '(1) run <node_n>'
+    print '(2) restart <node_n>'

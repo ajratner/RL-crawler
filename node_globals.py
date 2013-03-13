@@ -7,14 +7,20 @@ MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
 
 
+# PAGE TYPE PARAMS
+# http://www.fileinfo.com/filetypes/web
+SAFE_PAGE_TYPES = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?)$'
+
+
 # CONNECTION / pycurl
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 CURLOPT_TIMEOUT = 60
 
 
-# NODE ID / NETWORK
-NODE_NUMBER = 0
-NUMBER_OF_NODES = 1
+# THREADS / NODES
+NUMBER_OF_CTHREADS = 2
+NUMBER_OF_MTHREADS = 1
+NUMBER_OF_NODES = 2
 NODE_ADDRESSES = ['54.225.229.185', 'ec2-50-19-47-177.compute-1.amazonaws.com']
 # NOTE: ordered!
 DISTR_ON_FULL_URL = False

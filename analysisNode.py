@@ -29,7 +29,7 @@ def get_feedback():
     if request.method == 'POST':
       row = pop_row(handle, DB_PAYLOAD_TABLE, True, request.form["docid"])
       if tc == 1:
-        row_dict = {'url': row[1], 'html': row[3]}
+        row_dict = {'url': row[1], 'html': row[3], 'parent_url': row[4]}
         insert_row_dict(handle, DB_POSITIVES_TABLE, row_dict)
       
       # use feedback to populate a batch testing table for later classifier testing
@@ -39,7 +39,15 @@ def get_feedback():
 
 
     # get new datum for feedback
-    # row should be of form [id, url, parent_stats, html]; do not delete at this step
+    # row should be of form 
+    # row = [
+    #         id, 
+    #         url,
+    #         parent_stats,
+    #         html
+    #         parent_url]; 
+    #
+    # do not delete at this step
     row = pop_row(handle, DB_PAYLOAD_TABLE, False)
 
   # extract body html for display

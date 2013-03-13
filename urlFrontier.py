@@ -28,18 +28,17 @@ from node_globals import *
 
 class urlFrontier:
   
-  def __init__(self, node_n, num_nodes, num_threads, seen_persist, Q_logs=None):
+  def __init__(self, node_n, seen_persist, Q_message_sender=None, Q_logs=None):
     self.node_n = node_n
-    self.num_nodes = num_nodes
-    self.num_threads = num_threads
+    self.Q_message_sender = Q_message_sender
     self.Q_logs = Q_logs
     
     # crawl task Queue
-    # Priority Queue ~ [ (next_pull_time, host_addr, url, ref_page_stats, seed_dist) ]
+    # Priority Queue ~ [ (next_pull_time, host_addr, url, parent_page_stats, seed_dist, parent_url) ]
     self.Q_crawl_tasks = Queue.PriorityQueue()
 
     # host queue dict
-    # { host_addr: [(url, ref_page_stats, seed_dist), ...] }
+    # { host_addr: [(url, ref_page_stats, seed_dist, parent_url), ...] }
     self.hqs = {}
     
     # seen url check
@@ -58,7 +57,7 @@ class urlFrontier:
     self.DNScache = {}
 
     # overflow url Queue
-    # Queue ~ [ (host_addr, url, ref_page_stats, seen_dist) ]
+    # Queue ~ [ (host_addr, url, ref_page_stats, seen_dist, parent_url) ]
     self.Q_overflow_urls = Queue.Queue()
 
     # host queue cleanup Queue
@@ -116,61 +115,65 @@ class urlFrontier:
 
   # subroutine to add a url extracted from a host_addr
   def _add_extracted_url(self, ref_host_addr, ref_seed_dist, url_pkg):
-    url_in, ref_page_stats = url_pkg
+    url_in, ref_page_stats, parent_url = url_pkg
   
     # basic cleaning operations on url
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
     url = re.sub(r'/$', '', url_in)
 
-    # check if url already seen
-    if url not in self.seen:
+    # if url already seen do not proceed, else log as seen
+    if url in self.seen:
+      return False
+    else:
+      self.seen.add(url)
 
-      # get host IP address of url
-      url_parts = urlparse.urlsplit(url)
-      host_addr = self._get_and_log_addr(url_parts.netloc)
+    # if the page is not of a safe type log and do not proceed
+    if re.search(SAFE_PAGE_TYPES, url) is None:
+      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
+      return False
 
-      if host_addr is not None:
+    # get host IP address of url
+    url_parts = urlparse.urlsplit(url)
+    host_addr = self._get_and_log_addr(url_parts.netloc)
+    
+    # if DNS was resolved error already reported, do not proceed any further
+    if host_addr is None:
+      return False
 
-        # if this is an internal link, send directly to the serving hq
-        # NOTE: need to check that equality operator is sufficient here!
-        if host_addr == ref_host_addr:
-          self.hqs[host_addr].append((url, ref_page_stats, ref_seed_dist))
+    # calculate url's seed distance
+    seed_dist = ref_seed_dist if host_addr == ref_host_addr else ref_seed_dist + 1
 
-          # !log as seen & add to active count
-          self.seen.add(url)
-          self.Q_active_count.put(True)
-          
-          if DEBUG_MODE:
-            self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-        
-        else:
+    # if the page belongs to another node, pass to message sending service
+    if DISTR_ON_FULL_URL:
+      url_node = hash(url) % NUMBER_OF_NODES
+    else:
+      url_node = hash(host_addr) % NUMBER_OF_NODES
+    if url_node != self.node_n:
+      self.Q_message_sender.send((url_node, url, ref_page_stats, seed_dist, parent_url))
+      return False
 
-          # first make sure that this url does not exceed max link distance from seed
-          if ref_seed_dist < MAX_SEED_DIST or MAX_SEED_DIST == -1:
-          
-            # check if this address belongs to this node
-            url_node = hash(host_addr) % self.num_nodes
-            if url_node == self.node_n:
+    # if this is an internal link, send directly to the serving hq
+    if seed_dist == ref_seed_dist:
+      self.hqs[host_addr].append((url, ref_page_stats, seed_dist, parent_url))
 
-              # add to overflow queue
-              self.Q_overflow_urls.put((host_addr, url, ref_page_stats, ref_seed_dist + 1))
+      # add to active count
+      self.Q_active_count.put(True)
+      if DEBUG_MODE:
+        self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+    
+    # else if a new host under max dist, send to overflow_urls to stay cautiously thread safe
+    elif seed_dist <= MAX_SEED_DIST or MAX_SEED_DIST == -1:
+      
+      # add to overflow queue
+      self.Q_overflow_urls.put((host_addr, url, ref_page_stats, ref_seed_dist + 1, parent_url))
 
-              # !log as seen & add to active count
-              self.seen.add(url)
-              self.Q_active_count.put(True)
+      # add to active count
+      self.Q_active_count.put(True)
+      if DEBUG_MODE:
+        self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
 
-              if DEBUG_MODE:
-                self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-            
-            # else pass along to appropriate node
-            # NOTE: TO-DO!
-            else:
-              pass
-
-      # else if DNS was not resolved
-      # NOTE: TO-DO!
-      else:
-        pass
+    else:
+      return False
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -259,7 +262,7 @@ class urlFrontier:
     
     # initialize all hqs as either full & tasked or empty & to be deleted
     i = 0
-    while len(self.hqs) < HQ_TO_THREAD_RATIO*self.num_threads:
+    while len(self.hqs) < HQ_TO_THREAD_RATIO*NUMBER_OF_CTHREADS:
       i += 1
       
       # expend all given urls
@@ -282,43 +285,42 @@ class urlFrontier:
     # basic cleaning operations on url
     url = re.sub(r'/$', '', url_in)
 
-    # NOTE: do not check if seen, works for restart & assume original seed list is de-duped
+    # assume unseen and input to seen list, add to active count
+    self.seen.add(url)
+
+    # if the page is not of a safe type log and do not proceed
+    if re.search(SAFE_PAGE_TYPES, url) is None:
+      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
+      return False
 
     # get host IP address of url
     url_parts = urlparse.urlsplit(url)
     host_addr = self._get_and_log_addr(url_parts.netloc)
 
-    if host_addr is not None:
+    # if DNS was resolved error already reported, do not proceed any further
+    if host_addr is None:
+      return False
 
-      # check if this address belongs to this node
-      url_node = hash(host_addr) % self.num_nodes
-      if url_node == self.node_n:
-
-        # !log as seen & add to active count
-        self.seen.add(url)
-        self.Q_active_count.put(True)
-
-        if DEBUG_MODE:
-          self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-
-        # add to an existing hq, or create new one & log new crawl task, or add to overflow
-        if self.hqs.has_key(host_addr):
-          self.hqs[host_addr].append((url, None, 0))
-        elif len(self.hqs) < HQ_TO_THREAD_RATIO*self.num_threads:
-          self.hqs[host_addr] = []
-          self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None, 0))
-        else:
-          self.Q_overflow_urls.put((host_addr, url, None, 0))
-
-      # else pass along to appropriate node
-      # NOTE: TO-DO!
-      else:
-        pass
-
-    # else if DNS was not resolved
-    # NOTE: TO-DO!
+    # if the page belongs to another node, pass to message sending service
+    if DISTR_ON_FULL_URL:
+      url_node = hash(url) % NUMBER_OF_NODES
     else:
-      pass  
+      url_node = hash(host_addr) % NUMBER_OF_NODES
+    if url_node != self.node_n:
+      self.Q_message_sender.send((url_node, url, None, 0, None))
+      return False
+
+    # add to an existing hq, or create new one & log new crawl task, or add to overflow
+    self.Q_active_count.put(True)
+    if DEBUG_MODE:
+      self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+    if self.hqs.has_key(host_addr):
+      self.hqs[host_addr].append((url, None, 0, None))
+    elif len(self.hqs) < HQ_TO_THREAD_RATIO*NUMBER_OF_CTHREADS:
+      self.hqs[host_addr] = []
+      self.Q_crawl_tasks.put((datetime.datetime.now(), host_addr, url, None, 0, None))
+    else:
+      self.Q_overflow_urls.put((host_addr, url, None, 0, None))
 
 
   # routine called on abort (by user interrupt or by MAX_CRAWLED count being reached) to

@@ -35,7 +35,7 @@ def kill_join(Q):
 
 
 # FOR MESSAGING/TRANSFER BETWEEN NODES using simple socket datagram --
-class MsgListener(threading.Thread):
+class MsgReceiver(threading.Thread):
   def __init__(self, uf=None, Q_logs=None):
     threading.Thread.__init__(self)
     self.uf = uf
@@ -50,7 +50,8 @@ class MsgListener(threading.Thread):
 
       # receive data and place into urlFrontier via Q_overflow_urls
       data, addr = s.recvfrom(MSG_BUF_SIZE)
-      url, seed_dist, parent_page_stats = pickle.loads(data)
+      data_tuple = pickle.loads(data)
+      url = data_tuple[0]
       
       if self.uf is not None:
 
@@ -59,15 +60,26 @@ class MsgListener(threading.Thread):
         if DEBUG_MODE and self.Q_logs is not None:
           self.Q_logs.put("Received %s from %s" % (url, addr))
         if url not in self.uf.seen:
-          self.uf.seen.add(url)
+          self.uf.seen.add()
           url_parts = urlparse.urlsplit(url)
           host_addr = self.uf._get_and_log_addr(url_parts.netloc)
-          self.uf.Q_overflow_urls.put((host_addr, url, parent_page_stats, seed_dist))
+          self.uf.Q_overflow_urls.put(data_tuple.insert(0, host_addr))
           self.uf.Q_active_count.put(True)
 
       # FOR TESTING:
       else:
         print url
+
+
+class Q_message_receiver:
+  def __init__(self, uf=None, Q_logs=None):
+    self.uf = uf
+    self.Q_logs = Q_logs
+
+    # start a receiver thread
+    tr = MsgReceiver(self.uf, self.Q_logs)
+    tr.setDaemon(True)
+    tr.start()
 
 
 class MsgSender(threading.Thread):
@@ -81,9 +93,10 @@ class MsgSender(threading.Thread):
 
       # get a message to be sent from the queue
       # of the form: (node_num_to, url, seed_dist, parent_page_stats)
-      node_num_to, url, seed_dist, parent_page_stats = self.Q_out.get()
-      host_to = NODE_ADDRESSES[int(node_num_to)]
-      data = pickle.dumps((url, seed_dist, parent_page_stats))
+      data_tuple = self.Q_out.get()
+      node_num_to = int(data_tuple[0])
+      host_to = NODE_ADDRESSES[node_num_to]
+      data = pickle.dumps(data_tuple[1:])
     
       # bind a socket to the default port
       s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -92,22 +105,18 @@ class MsgSender(threading.Thread):
       # send message
       s.sendto(data, (host_to, DEFAULT_IN_PORT))
       if DEBUG_MODE and self.Q_logs is not None:
-        self.Q_logs.put("%s sent to node %s", (url, node_num_to))
+        self.Q_logs.put("%s sent to node %s", (data_tuple[1], node_num_to))
 
 
-class Q_out_to_nodes:
-  def __init__(self, uf=None, Q_logs=None):
-    self.uf = uf
+class Q_message_sender:
+  def __init__(self, Q_logs=None):
     self.Q_logs = Q_logs
     
     # Queue of messages to be sent to other nodes
     # Queue ~ [ (node_num_to, url, seed_dist, parent_page_stats) ]
     self.Q_out = Queue.Queue()
 
-    # start a listener thread and a sender thread
-    tl = MsgListener(self.uf, self.Q_logs)
-    tl.setDaemon(True)
-    tl.start()
+    # start a sender thread
     ts = MsgSender(self.Q_out, self.Q_logs)
     ts.setDaemon(True)
     ts.start()

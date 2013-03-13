@@ -4,9 +4,7 @@ import MySQLdb as mdb
 import pycurl
 import cStringIO
 import bs4
-from bs4 import BeautifulSoup
 from collections import Counter
-from nltk.stem.porter import PorterStemmer
 from util import *
 import urlparse
 from node_globals import *
