@@ -65,7 +65,7 @@ class MsgReceiver(threading.Thread):
         if DEBUG_MODE and self.Q_logs is not None:
           self.Q_logs.put("Received %s from %s" % (url, addr))
         if url not in self.uf.seen:
-          self.uf.seen.add()
+          self.uf.seen.add(url)
           url_parts = urlparse.urlsplit(url)
           host_addr = self.uf._get_and_log_addr(url_parts.netloc)
           self.uf.Q_overflow_urls.put(data_tuple.insert(0, host_addr))
@@ -112,7 +112,7 @@ class MsgSender(threading.Thread):
       # send message
       s.sendto(data, (host_to, DEFAULT_IN_PORT))
       if DEBUG_MODE and self.Q_logs is not None:
-        self.Q_logs.put("%s sent to node %s", (data_tuple[1], node_num_to))
+        self.Q_logs.put("%s sent to node %s" % (data_tuple[1], node_num_to))
       self.scount += 1
 
 
@@ -158,7 +158,7 @@ class PostmanThreadDB(threading.Thread):
         
           # if success, then log if applicable
           if self.Q_logs is not None and DEBUG_MODE:
-            self.Q_logs.put("Postman: " + mail_dict['url'] + " html and features payload dropped!\nTotal payloads dropped = " + self.count_mailed)
+            self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
 
         # else log as error if applicable, then pass over
         else:
