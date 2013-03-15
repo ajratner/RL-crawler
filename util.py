@@ -54,7 +54,7 @@ class MsgReceiver(threading.Thread):
 
       # receive data and place into urlFrontier via Q_overflow_urls
       data, addr = s.recvfrom(MSG_BUF_SIZE)
-      data_tuple = pickle.loads(data)
+      data_tuple = list(pickle.loads(data))
       url = data_tuple[0]
       self.rcount += 1
       
@@ -68,7 +68,8 @@ class MsgReceiver(threading.Thread):
           self.uf.seen.add(url)
           url_parts = urlparse.urlsplit(url)
           host_addr = self.uf._get_and_log_addr(url_parts.netloc)
-          self.uf.Q_overflow_urls.put(data_tuple.insert(0, host_addr))
+          data_tuple.insert(0, host_addr)
+          self.uf.Q_overflow_urls.put(tuple(data_tuple))
           self.uf.Q_active_count.put(True)
 
       # FOR TESTING:

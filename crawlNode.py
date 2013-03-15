@@ -180,7 +180,6 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
     t.start()
 
   print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
-  print 'NOTE: Abort by Ctrl-C will take up to %s seconds to respond' % (ACTIVITY_CHECK_P,)
 
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
   while True:
