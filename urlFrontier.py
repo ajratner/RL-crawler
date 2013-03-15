@@ -136,14 +136,14 @@ class urlFrontier:
     else:
       self.seen.add(url)
 
-    # if the page is not of a safe type log and do not proceed
-    if re.search(SAFE_PAGE_TYPES, url) is None:
-      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
-      return False
-
     # get host IP address of url
     url_parts = urlparse.urlsplit(url)
     host_addr = self._get_and_log_addr(url_parts.netloc)
+
+    # if the page is not of a safe type log and do not proceed
+    if re.search(SAFE_PATH_RGX, url_parts.path) is None:
+      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
+      return False
     
     # if DNS was resolved error already reported, do not proceed any further
     if host_addr is None:

@@ -10,7 +10,7 @@ RESTART_DUMP = 'restart_seed_list'
 
 # PAGE TYPE PARAMS
 # http://www.fileinfo.com/filetypes/web
-SAFE_PAGE_TYPES = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?)$'
+SAFE_PATH_RGX = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?)/?$|^[^\.]*$'
 
 
 # CONNECTION / pycurl
