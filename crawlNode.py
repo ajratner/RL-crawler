@@ -203,7 +203,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         # if all node active counts == 0 and total sent == total received, then stop
         nr_sums = np.sum(np.array(node_rows), 0)
         if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3]:
-          Q_logs.put("crawl completed at %s", (datetime.datetime.now(),))
+          Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
           print 'crawl completed!'
           sys.exit(0)
 
