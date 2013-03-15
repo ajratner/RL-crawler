@@ -191,8 +191,8 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
       with DB_connection(DB_VARS) as handle:
         row_dict = {
           'active_count': uf.Q_active_count.qsize(), 
-          'rcount': Q_message_receiver.rcount,
-          'scount': uf.Q_message_sender.scount }
+          'rcount': Q_mr.rcount,
+          'scount': Q_ms.scount }
         insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
 
         time.sleep(ACTIVITY_CHECK_P/10.0)
