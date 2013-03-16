@@ -254,6 +254,7 @@ class urlFrontier:
     
     # if hq already exists, recycle- insertion not thread safe
     # NOTE: better way to do this while ensuring thread safety here?
+    host_addr = r[0]
     if self.hqs.has_key(host_addr):
       self.Q_overflow_urls.task_done()
       self.Q_overflow_urls.put(r)
