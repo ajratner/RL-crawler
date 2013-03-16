@@ -94,7 +94,10 @@ class urlFrontier:
 
     # add urls to either hq of host_addr or else overflow queue
     for url_pkg in url_pkgs:
-      self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
+      if self.total_crawled < MAX_CRAWLED:
+        self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
+      elif self.total_crawled == MAX_CRAWLED and DEBUG_MODE:
+        self.Q_logs.put("MAX CRAWLED limit reached")
 
     # calculate time delay based on success
     now = datetime.datetime.now()
@@ -118,14 +121,9 @@ class urlFrontier:
 
 
   # subroutine to add a url extracted from a host_addr
-  def _add_extracted_url(self, ref_host_addr, ref_seed_dist, url_pkg):
+  def _add_extracted_url(self, ref_host_addr, ref_seed_dist, url_pkg, from_other_node=False):
     url_in, ref_page_stats, parent_url = url_pkg
 
-    # check for MAX_CRAWLED limit --> ADD NO MORE URLS IF TOTAL COUNT IS AT MAX
-    if self.total_crawled > MAX_CRAWLED:
-      self.Q_logs.put("Max crawled limit reached!")
-      return False
-  
     # basic cleaning operations on url
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
     url = re.sub(r'/$', '', url_in)
@@ -150,19 +148,23 @@ class urlFrontier:
       return False
 
     # calculate url's seed distance
-    seed_dist = ref_seed_dist if host_addr == ref_host_addr else ref_seed_dist + 1
+    if not from_other_node:
+      seed_dist = ref_seed_dist if host_addr == ref_host_addr else ref_seed_dist + 1
+    else:
+      seed_dist = ref_seed_dist
 
     # if the page belongs to another node, pass to message sending service
-    if DISTR_ON_FULL_URL:
-      url_node = hash(url) % NUMBER_OF_NODES
-    else:
-      url_node = hash(host_addr) % NUMBER_OF_NODES
-    if url_node != self.node_n:
-      self.Q_message_sender.send((url_node, url, ref_page_stats, seed_dist, parent_url))
-      return False
+    if not from_other_node:
+      if DISTR_ON_FULL_URL:
+        url_node = hash(url) % NUMBER_OF_NODES
+      else:
+        url_node = hash(host_addr) % NUMBER_OF_NODES
+      if url_node != self.node_n:
+        self.Q_message_sender.send((url_node, url, ref_page_stats, seed_dist, parent_url))
+        return False
 
     # if this is an internal link, send directly to the serving hq
-    if seed_dist == ref_seed_dist:
+    if seed_dist == ref_seed_dist and not from_other_node:
       self.hqs[host_addr].append((url, ref_page_stats, seed_dist, parent_url))
 
       # add to active count & update total count
@@ -175,7 +177,7 @@ class urlFrontier:
     elif seed_dist <= MAX_SEED_DIST or MAX_SEED_DIST == -1:
       
       # add to overflow queue
-      self.Q_overflow_urls.put((host_addr, url, ref_page_stats, ref_seed_dist + 1, parent_url))
+      self.Q_overflow_urls.put((host_addr, url, ref_page_stats, seed_dist, parent_url))
 
       # add to active count
       self.Q_active_count.put(True)

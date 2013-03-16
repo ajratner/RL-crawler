@@ -55,22 +55,16 @@ class MsgReceiver(threading.Thread):
       # receive data and place into urlFrontier via Q_overflow_urls
       data, addr = s.recvfrom(MSG_BUF_SIZE)
       data_tuple = list(pickle.loads(data))
-      url = data_tuple[0]
+      
+      # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
+      seed_dist = int(data_tuple[2])
       self.Q_rcount.put(True)
       
       if self.uf is not None:
 
-        # get host addr, check against seen filter of this node, add to overlflow_urls, update
-        # urlFrontier active count, add to this node's seen filter, record in log if debug mode
-        if DEBUG_MODE and self.Q_logs is not None:
-          self.Q_logs.put("Received %s from %s" % (url, addr))
-        if url not in self.uf.seen:
-          self.uf.seen.add(url)
-          url_parts = urlparse.urlsplit(url)
-          host_addr = self.uf._get_and_log_addr(url_parts.netloc)
-          data_tuple.insert(0, host_addr)
-          self.uf.Q_overflow_urls.put(tuple(data_tuple))
-          self.uf.Q_active_count.put(True)
+        # pipe into uf via _add_extracted_url
+        url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
+        self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
 
       # FOR TESTING:
       else:
