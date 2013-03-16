@@ -59,6 +59,8 @@ class MsgReceiver(threading.Thread):
       # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
       seed_dist = int(data_tuple[2])
       self.Q_rcount.put(True)
+      if self.Q_logs is not None and DEBUG_MODE:
+        self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
       
       if self.uf is not None:
 

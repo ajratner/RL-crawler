@@ -94,10 +94,7 @@ class urlFrontier:
 
     # add urls to either hq of host_addr or else overflow queue
     for url_pkg in url_pkgs:
-      if self.total_crawled < MAX_CRAWLED:
-        self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
-      elif self.total_crawled == MAX_CRAWLED and DEBUG_MODE:
-        self.Q_logs.put("MAX CRAWLED limit reached")
+      self._add_extracted_url(host_addr, host_seed_dist, url_pkg)
 
     # calculate time delay based on success
     now = datetime.datetime.now()
