@@ -3,7 +3,7 @@
 # node globals
 
 # CRAWL: BOUNDS, CAPS, OVERALL CONTROL
-MAX_CRAWLED = 50000  # NOTE: per node!
+MAX_CRAWLED = 10  # NOTE: per node!
 MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
 

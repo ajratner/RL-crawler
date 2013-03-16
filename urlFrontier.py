@@ -99,7 +99,7 @@ class urlFrontier:
     # calculate time delay based on success
     now = datetime.datetime.now()
     r = random.random()
-    td = 10*time_taken + r*BASE_PULL_DELAY if success else (1 + r)*BASE_PULL_DELAY
+    td = 10*time_taken + r*BASE_PULL_DELAY if success else (0.5 + r)*BASE_PULL_DELAY
     next_time = now + datetime.timedelta(0, td)
 
     # if the hq of host_addr is not empty, enter new task in crawl task queue
@@ -239,12 +239,17 @@ class urlFrontier:
     # delete queue and add new one
     del self.hqs[host_addr]
     added = False
-    while not added:
+
+    # CAP THE NUMBER OF TIMES IT CAN LOOP LIKE THIS
+    for i in range(10):
       added = self._overflow_to_new_hq()
+      if added:
+        break
 
     # log task done to both queues
-    self.Q_hq_cleanup.task_done()
-    self.Q_overflow_urls.task_done()
+    if added:
+      self.Q_hq_cleanup.task_done()
+      self.Q_overflow_urls.task_done()
 
 
   # subroutine for transferring urls from overflow queue to new hq

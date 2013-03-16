@@ -75,7 +75,7 @@ def resolve_extracted_link(link, ref_url, Q_logs):
 
     # log for improvement purposes
     if Q_logs is not None:
-      Q_logs.put("LINK PARSE EXCEPTION: %s", (link,))
+      Q_logs.put("LINK PARSE EXCEPTION: %s" % (link,))
     
     rup = urlparse.urlsplit(ref_url)
     return rup.scheme + '://' + rup.netloc + '/' + link
