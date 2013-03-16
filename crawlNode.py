@@ -105,7 +105,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       #                       [t]: title_tokens,
       #                       [t]: link_title_tokens
       #                     )
-      extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats], url)
+      extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats], [url for x in extracted_urls])
 
       # log page pull as successful & submit extracted urls + data to url frontier
       uf.log_and_add_extracted(host_addr, host_seed_dist, True, t.duration, extracted_url_pkgs)
@@ -193,6 +193,8 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
           'rcount': Q_mr.rcount,
           'scount': Q_ms.scount }
         insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
+        if DEBUG_MODE:
+          Q_logs.put("Submitted node activity status (a: %s, s: %s, r: %s)" % (uf.Q_active_count.qsize(), Q_ms.scount, Q_mr.rcount))
 
         time.sleep(ACTIVITY_CHECK_P/10.0)
 

@@ -159,16 +159,13 @@ class PostmanThreadDB(threading.Thread):
         
           # if success, then log if applicable
           if self.Q_logs is not None and DEBUG_MODE:
+            self.count_mailed += 1
             self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
 
         # else log as error if applicable, then pass over
         else:
           if self.Q_logs is not None:
             self.Q_logs.put("DB ERROR: PAYLOAD DROP FOR "+mail_dict['url']+" FAILED!")
-
-        # NOTE: TO-DO: handle a db error somehow?
-        # for now, both successes and failures count towards total count of mailed
-        self.count_mailed += 1
 
         # either way report task done to master joining queue if applicable
         if self.uf is not None:
@@ -182,12 +179,12 @@ class PostmanThreadDB(threading.Thread):
             self.uf.dump_for_restart()
             kill_join(self.uf.Q_active_count)
 
-          if self.Q_logs is not None and DEBUG_MODE:
-            self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
-
           # pull a task record & record done to handle loop & join type blocking
           task = self.uf.Q_active_count.get()
           self.uf.Q_active_count.task_done()
+          if self.Q_logs is not None and DEBUG_MODE:
+            self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
+
     
 
 class Q_out_to_db:
