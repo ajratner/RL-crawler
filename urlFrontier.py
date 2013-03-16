@@ -250,7 +250,7 @@ class urlFrontier:
 
   # subroutine for transferring urls from overflow queue to new hq
   def _overflow_to_new_hq(self):
-    r = self.Q_overflow_urls.get()
+    r = list(self.Q_overflow_urls.get())
     
     # if hq already exists, recycle- insertion not thread safe
     # NOTE: better way to do this while ensuring thread safety here?
@@ -264,7 +264,7 @@ class urlFrontier:
       # create new empty hq and send seed url to crawl task queue
       self.hqs[r[0]] = []
       r.insert(0, datetime.datetime.now())
-      self.Q_crawl_tasks.put(r)
+      self.Q_crawl_tasks.put(tuple(r))
       return True
   
 
