@@ -190,11 +190,11 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
       with DB_connection(DB_VARS) as handle:
         row_dict = {
           'active_count': uf.Q_active_count.qsize(), 
-          'rcount': Q_mr.rcount,
-          'scount': Q_ms.scount }
+          'rcount': Q_mr.rcount(),
+          'scount': Q_ms.scount() }
         insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
         if DEBUG_MODE:
-          Q_logs.put("Submitted node activity status (a: %s, s: %s, r: %s)" % (uf.Q_active_count.qsize(), Q_ms.scount, Q_mr.rcount))
+          Q_logs.put("Submitted node activity status (a: %s, s: %s, r: %s)" % (uf.Q_active_count.qsize(), Q_ms.scount(), Q_mr.rcount()))
 
         time.sleep(ACTIVITY_CHECK_P/10.0)
 
