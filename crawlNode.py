@@ -54,6 +54,10 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   wait_time = next_pull_time - datetime.datetime.now()
   time.sleep(max(0, wait_time.total_seconds()))
 
+  # if uf went inactive since crawl task was pulled, stop now
+  if not uf.active:
+    return False
+
   if DEBUG_MODE:
     Q_logs.put('%s: pulling page %s at %s' % (thread_name, url, datetime.datetime.now()))
 
@@ -84,13 +88,15 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       # add page, url + features list to queue out (-> database / analysis nodes)
       row_dict = {
         'url': url,
-        'html': html
+        'html': html,
+        'node': NODE_ID
       }
       if parent_page_stats is not None:
         row_dict['parent_stats'] = flist_to_string(parent_page_stats)
       if parent_url is not None:
         row_dict['parent_url'] = parent_url
-      Q_payload.Q_out.put(row_dict)
+      if uf.active:
+        Q_payload.Q_out.put(row_dict)
 
       # package all data that needs to be passed on with child links
       # the data format of extracted link packages will be:
@@ -108,7 +114,8 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       extracted_url_pkgs = zip(extracted_urls, [tuple(page_stats) + tuple(ls) for ls in link_stats], [url for x in extracted_urls])
 
       # log page pull as successful & submit extracted urls + data to url frontier
-      uf.log_and_add_extracted(host_addr, host_seed_dist, True, t.duration, extracted_url_pkgs)
+      if uf.active:
+        uf.log_and_add_extracted(host_addr,host_seed_dist, True, t.duration, extracted_url_pkgs)
 
     else:
       Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))

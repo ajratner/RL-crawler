@@ -37,6 +37,9 @@ class urlFrontier:
     self.Q_logs = Q_logs
     self.total_crawled = 0
     self.payloads_dropped = 0
+
+    # single variable for tracking whether node should be active or not
+    self.active = True
     
     # crawl task Queue
     # Priority Queue ~ [ (next_pull_time, host_addr, url, parent_page_stats, seed_dist, parent_url) ]
@@ -82,7 +85,13 @@ class urlFrontier:
 
   # primary routine for getting a crawl task from queue
   def get_crawl_task(self):
-    return self.Q_crawl_tasks.get()
+    if self.active:
+      return self.Q_crawl_tasks.get()
+    else:
+
+      # block
+      while True:
+        time.sleep(10)
   
 
   # primary routine to log crawl task done & submit extracted urls

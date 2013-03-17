@@ -156,13 +156,17 @@ class PostmanThreadDB(threading.Thread):
         # get item from queue, item must be row_dict
         mail_dict = self.Q_out.get()
 
+        # if max pages crawled has been reached, quit here; note Q_out will be drained
+        if not self.uf.active:
+          continue
+
         # insert row into db
         if insert_row_dict(handle, self.db_table_name, mail_dict):
         
           # if success, then log if applicable
+          self.count_mailed += 1
+          self.uf.payloads_dropped += 1
           if self.Q_logs is not None and DEBUG_MODE:
-            self.count_mailed += 1
-            self.uf.payloads_dropped += 1
             self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
 
         # else log as error if applicable, then pass over
@@ -175,11 +179,16 @@ class PostmanThreadDB(threading.Thread):
 
           # if max pages crawled has been reached, terminate the crawl
           if self.count_mailed == MAX_CRAWLED:
+
+            # log if possible
             if self.Q_logs is not None:
               self.Q_logs.put("CRAWL REACHED MAX. TERMINATING...")
 
-            # also dump queues first, as they may not be emptied, to prep for restart
+            # deactivate node, dump for restart and empty active count
+            self.uf.active = False
             self.uf.dump_for_restart()
+
+            # drain active count to 0 and block here
             kill_join(self.uf.Q_active_count)
 
           # pull a task record & record done to handle loop & join type blocking
