@@ -66,6 +66,13 @@ HQ_TO_THREAD_RATIO = 3
 MAX_QUEUE_SIZE = 10000
 
 
+# CRAWL NODE Q FLOW
+OVERFLOW_TRY_MAX = 10
+OVERFLOW_MULTI = True  # mthreads try to insert multiple from overflow to new hq
+                       # (applicable esp. if number of hosts is low)
+OVERFLOW_MUTLI_TRY_L = 1
+
+
 # ANALYSIS NODE INTERFACE & BATCH TESTING SCRIPT
 DB_BATCH_TEST_TABLE = 'batch_test'
 FILL_BATCH_TEST = False

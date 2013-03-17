@@ -36,6 +36,7 @@ class urlFrontier:
     self.Q_message_sender = Q_message_sender
     self.Q_logs = Q_logs
     self.total_crawled = 0
+    self.payloads_dropped = 0
     
     # crawl task Queue
     # Priority Queue ~ [ (next_pull_time, host_addr, url, parent_page_stats, seed_dist, parent_url) ]
@@ -77,7 +78,7 @@ class urlFrontier:
     # NOTE: note that there are problems with this methodology, but that errors will only lead
     # to data redundancy (as opposed to omission)...
     self.thread_active = {}
-  
+
 
   # primary routine for getting a crawl task from queue
   def get_crawl_task(self):
@@ -150,6 +151,10 @@ class urlFrontier:
     else:
       seed_dist = ref_seed_dist
 
+    # check for being past max seed distance
+    if seed_dist > MAX_SEED_DIST and MAX_SEED_DIST > -1:
+      return False
+
     # if the page belongs to another node, pass to message sending service
     if not from_other_node:
       if DISTR_ON_FULL_URL:
@@ -160,7 +165,7 @@ class urlFrontier:
         self.Q_message_sender.send((url_node, url, ref_page_stats, seed_dist, parent_url))
         return False
 
-    # if this is an internal link, send directly to the serving hq
+    # if this is an internal link, and not from other node, send directly to the serving hq
     if seed_dist == ref_seed_dist and not from_other_node:
       self.hqs[host_addr].append((url, ref_page_stats, seed_dist, parent_url))
 
@@ -170,8 +175,8 @@ class urlFrontier:
       if DEBUG_MODE:
         self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
     
-    # else if a new host under max dist, send to overflow_urls to stay cautiously thread safe
-    elif seed_dist <= MAX_SEED_DIST or MAX_SEED_DIST == -1:
+    # else send to overflow_urls to stay cautiously thread safe
+    else:
       
       # add to overflow queue
       self.Q_overflow_urls.put((host_addr, url, ref_page_stats, seed_dist, parent_url))
@@ -181,9 +186,6 @@ class urlFrontier:
       self.total_crawled += 1
       if DEBUG_MODE:
         self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
-
-    else:
-      return False
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -224,53 +226,73 @@ class urlFrontier:
       self.Q_logs.put('DNS ERROR: skipping ' + hostname)
       return None
 
-
-  # primary maintenance routine- clear one old queue and replace with a new one from overflow
-  # NOTE: this assumes constant number of existing queues is always present
-  def clean_and_fill(self):
-    
-    # get queue to delete & time to delete at
-    time_to_delete, host_addr = self.Q_hq_cleanup.get()
-
-    # wait to delete
-    wait_time = time_to_delete - datetime.datetime.now()
-    time.sleep(max(0, wait_time.total_seconds()))
-
-    # delete queue and add new one
-    del self.hqs[host_addr]
-    added = False
-
-    # CAP THE NUMBER OF TIMES IT CAN LOOP LIKE THIS
-    for i in range(10):
-      added = self._overflow_to_new_hq()
-      if added:
-        break
-
-    # log task done to both queues
-    if added:
-      self.Q_hq_cleanup.task_done()
-      self.Q_overflow_urls.task_done()
-
-
-  # subroutine for transferring urls from overflow queue to new hq
-  def _overflow_to_new_hq(self):
-    r = list(self.Q_overflow_urls.get())
-    
-    # if hq already exists, recycle- insertion not thread safe
-    # NOTE: better way to do this while ensuring thread safety here?
-    host_addr = r[0]
-    if self.hqs.has_key(host_addr):
-      self.Q_overflow_urls.task_done()
-      self.Q_overflow_urls.put(r)
-      return False
-    else:
-      
-      # create new empty hq and send seed url to crawl task queue
-      self.hqs[r[0]] = []
-      r.insert(0, datetime.datetime.now())
-      self.Q_crawl_tasks.put(tuple(r))
-      return True
   
+  # primary routine WITH INTERNAL LOOP for maintenance threads
+  # routine is: get cleanup task --> delete old hq after wait --> fill from overflow
+  # routine is looped so as not to get stuck in an impasse situation
+  def clean_and_fill_loop(self):
+    hqs_to_make = 0
+    
+    # primary loop- must loop so as not to get stuck in impasse situation
+    while True
+
+      # get queue to delete & time to delete at; if no hqs to make then block
+      get_block = (hqs_to_make == 0)
+      try:
+        time_to_delete, host_addr = self.Q_hq_cleanup.get(get_block)
+
+        # wait till safe to delete, then delete
+        wait_time = time_to_delete - datetime.datetime.now()
+        time.sleep(max(0, wait_time.total_seconds()))
+        del self.hqs[host_addr]
+        hqs_to_make += 1
+
+      # if there are still hqs to make, then don't block on getting more cleanup tasks
+      except Queue.Empty:
+        pass
+
+      # try a bounded number of times to find a url in overflow that doesn't already have an hq
+      for i in range(min(OVERFLOW_TRY_MAX, self.Q_overflow_urls.qsize())):
+
+        # get an overflow url tuple
+        r = list(self.Q_overflow_urls.get())
+        host_addr = r[0]
+
+        # if hq already exists for this host_addr then recycle and continue
+        if self.hqs.has_key(host_addr):
+          self.Q_overflow_urls.task_done()
+          self.Q_overflow_urls.put(tuple(r))
+          continue
+
+        # else create a new hq
+        else:
+          self.hqs[host_addr] = []
+
+          # if OVERFLOW_MULTI enabled, try to fill the new hq with multiple consecutive
+          cn = 0
+          while cn < OVERFLOW_MULTI_TRY_L:
+            try:
+              s = list(self.Q_overflow_urls.get(False))
+            
+            # don't block on attempt to fill additional urls from overflow here...
+            except Queue.Empty:
+              break
+
+            # check if the pulled url belongs in the hq, if not recycle
+            if s[0] == host_addr:
+              self.hqs[host_addr].append(tuple(s[1:]))
+            else:
+              self.Q_overflow_urls.put(tuple(s))
+              cn += 1
+            self.Q_overflow_urls.task_done()
+          
+          # add the original url from overflow to crawl tasks
+          r.insert(0, datetime.datetime.now())
+          self.Q_crawl_tasks.put(tuple(r))
+          hqs_to_make -= 1
+          self.Q_overflow_urls.task_done()
+          self.Q_hq_cleanup.task_done()
+
 
   # primary routine for initialization of url frontier / hqs
   # NOTE: !!! Assumed that this is sole thread running when executed, prior to crawl start

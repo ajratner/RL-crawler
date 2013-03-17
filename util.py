@@ -162,6 +162,7 @@ class PostmanThreadDB(threading.Thread):
           # if success, then log if applicable
           if self.Q_logs is not None and DEBUG_MODE:
             self.count_mailed += 1
+            self.uf.payloads_dropped += 1
             self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
 
         # else log as error if applicable, then pass over

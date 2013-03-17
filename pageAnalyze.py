@@ -49,14 +49,11 @@ def resolve_extracted_link(link, ref_url, Q_logs):
 
   # following RFC 1808 <scheme>://<net_loc>/<path>;<params>?<query>#<fragment>
 
+  # first look for absolute link cases
+
   # first look for '//'- if present urlparse will handle properly
   if re.search(r'//', link) is not None:
     return link
-
-  # look for relative path '/'
-  elif re.search(r'^/', link) is not None:
-    rup = urlparse.urlsplit(ref_url)
-    return rup.scheme + '://' + rup.netloc + link
 
   # look for clear netloc form- 'xxx.xxx.xxx'
   elif re.search(r'^\w+\.\w+.\w+', link) is not None:
@@ -70,15 +67,35 @@ def resolve_extracted_link(link, ref_url, Q_logs):
   elif re.search(r'^mailto:', link) is not None:
     return None
   
-  # NOTE: TO-DO --> run testing, try to think of further catches
+  # next look for relative link cases
   else:
 
-    # log for improvement purposes
-    if Q_logs is not None:
-      Q_logs.put("LINK PARSE EXCEPTION: %s" % (link,))
-    
+    # calculate root path for relative links
+    if re.search(r'//', ref_url) is None:
+      Q_logs.put("LINK PARSE ERROR: INCOMPLETE ref url %s" % (ref_url,))
+      return None
     rup = urlparse.urlsplit(ref_url)
-    return rup.scheme + '://' + rup.netloc + '/' + link
+    root = rup.scheme + '://' + rup.netloc
+    if rup.path == '':
+      root += '/'
+    else:
+      root += re.sub(r'[^/]+$', '', rup.path)
+
+    # look for relative path '/'
+    elif re.search(r'^/', link) is not None:
+      return root + link[1:]
+
+    # look for rel page form
+    elif re.search(r'^[^\.]+\.[^\.]+$', link) is not None:
+      return root + re.sub(r'^/', '', link)
+
+    # NOTE: TO-DO --> run testing, try to think of further catches
+    else:
+      return root + re.sub(r'^/', '', link)
+
+      # log for improvement purposes
+      if Q_logs is not None:
+        Q_logs.put("LINK PARSE EXCEPTION: %s" % (link,))
 
 
 # link extractor subfunction

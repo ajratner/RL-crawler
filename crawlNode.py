@@ -63,10 +63,10 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       c.perform()
       pulled = True
     except Exception as e:
+      Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
       uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
-      Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
       pulled = False
   
   if pulled:
@@ -111,10 +111,10 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       uf.log_and_add_extracted(host_addr, host_seed_dist, True, t.duration, extracted_url_pkgs)
 
     else:
+      Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))
       uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
-      Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))
 
 
 
@@ -138,8 +138,7 @@ class MaintenanceThread(threading.Thread):
     self.uf = uf
 
   def run(self):
-    while True:
-      self.uf.clean_and_fill()
+    self.uf.clean_and_fill_loop()
 
 
 # main multi-thread crawl routine
@@ -195,7 +194,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
         if DEBUG_MODE:
           Q_logs.put("Submitted node activity status (a: %s, s: %s, r: %s)" % (uf.Q_active_count.qsize(), Q_ms.scount(), Q_mr.rcount()))
-          Q_logs.put("uf status: (ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
+          Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
 
         time.sleep(ACTIVITY_CHECK_P/10.0)
 
