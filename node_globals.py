@@ -70,7 +70,7 @@ MAX_QUEUE_SIZE = 10000
 OVERFLOW_TRY_MAX = 10
 OVERFLOW_MULTI = True  # mthreads try to insert multiple from overflow to new hq
                        # (applicable esp. if number of hosts is low)
-OVERFLOW_MUTLI_TRY_L = 1
+OVERFLOW_MULTI_TRY_L = 1
 
 
 # ANALYSIS NODE INTERFACE & BATCH TESTING SCRIPT

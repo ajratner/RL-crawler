@@ -45,7 +45,7 @@ def basic_html_clean(html_string):
 
 
 # extracted link resolution
-def resolve_extracted_link(link, ref_url, Q_logs):
+def resolve_extracted_link(link, ref_url, Q_logs, base_url=None):
 
   # following RFC 1808 <scheme>://<net_loc>/<path>;<params>?<query>#<fragment>
 
@@ -75,23 +75,40 @@ def resolve_extracted_link(link, ref_url, Q_logs):
       Q_logs.put("LINK PARSE ERROR: INCOMPLETE ref url %s" % (ref_url,))
       return None
     rup = urlparse.urlsplit(ref_url)
-    root = rup.scheme + '://' + rup.netloc
-    if rup.path == '':
-      root += '/'
+    
+    # calculate the 'base root' for '/...'
+    if base_url is not None:
+      base_root = re.sub(r'/$', '', base_url) + '/'
     else:
-      root += re.sub(r'[^/]+$', '', rup.path)
+      base_root = rup.scheme + '://' + rup.netloc + '/'
 
-    # look for relative path '/'
+    # calculate the 'prox root' for '...'
+    prox_root = rup.scheme + '://' + rup.netloc
+    if rup.path == '':
+      prox_root += '/'
+    else:
+      prox_root += re.sub(r'[^/]+$', '', rup.path)
+      prox2_root = re.sub(r'[^/]+/$', '', prox_root)
+
+    # look for '/'
     if re.search(r'^/', link) is not None:
-      return root + link[1:]
+      return base_root + link[1:]
 
-    # look for rel page form
-    elif re.search(r'^[^\.]+\.[^\.]+$', link) is not None:
-      return root + re.sub(r'^/', '', link)
+    # look for './'
+    if re.search(r'^\./', link) is not None:
+      return prox_root + link[2:]
+
+    # look for '../'
+    if re.search(r'^\.\./', link) is not None:
+      return prox2_root + link[3:]
+
+    # look for rel page form '' + 'xxxx.yyy'
+    elif re.search(r'^[^\./]+\.[^\./]+$', link) is not None:
+      return prox_root + link
 
     # NOTE: TO-DO --> run testing, try to think of further catches
     else:
-      return root + re.sub(r'^/', '', link)
+      return None
 
       # log for improvement purposes
       if Q_logs is not None:
@@ -102,6 +119,13 @@ def resolve_extracted_link(link, ref_url, Q_logs):
 def extract_link_data(html, ref_url, Q_logs=None):
   urls = []
   url_data = []
+
+  # look for optional "base" tag
+  base_tag = re.search(r'<base[^>]+href="(.*?)"', html)
+  if base_tag is not None:
+    base_url = base_tag.group(1)
+  else:
+    base_url = None
   
   # look for all a tags
   link_tags = re.findall(r'<a(?:\s[^>]+)?>.*?</a>', html)
@@ -110,7 +134,7 @@ def extract_link_data(html, ref_url, Q_logs=None):
     if link is not None:
 
       # try to resolve link
-      link_url = resolve_extracted_link(link.group(1), ref_url, Q_logs)
+      link_url = resolve_extracted_link(link.group(1), ref_url, Q_logs, base_url)
       if link_url is not None:
         urls.append(link_url)
 
