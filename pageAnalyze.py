@@ -82,7 +82,7 @@ def resolve_extracted_link(link, ref_url, Q_logs):
       root += re.sub(r'[^/]+$', '', rup.path)
 
     # look for relative path '/'
-    elif re.search(r'^/', link) is not None:
+    if re.search(r'^/', link) is not None:
       return root + link[1:]
 
     # look for rel page form

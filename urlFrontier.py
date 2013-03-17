@@ -234,7 +234,7 @@ class urlFrontier:
     hqs_to_make = 0
     
     # primary loop- must loop so as not to get stuck in impasse situation
-    while True
+    while True:
 
       # get queue to delete & time to delete at; if no hqs to make then block
       get_block = (hqs_to_make == 0)
