@@ -3,7 +3,7 @@
 # node globals
 
 # CRAWL: BOUNDS, CAPS, OVERALL CONTROL
-MAX_CRAWLED = 10  # NOTE: per node!
+MAX_CRAWLED = 100000  # NOTE: per node!
 MAX_SEED_DIST = 0  # -1 for no max seed distance
 RESTART_DUMP = 'restart_seed_list'
 
@@ -44,7 +44,7 @@ DB_POSITIVES_TABLE = 'positives_table'
 
 # LOGGING MODULE
 LOG_REL_PATH = 'logs/log'
-DEBUG_MODE = True
+DEBUG_MODE = False
 
 
 # DNS CACHE
