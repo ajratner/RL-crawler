@@ -37,6 +37,21 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   url_parts[1] = host_addr
   url_addr = urlparse.urlunsplit(url_parts)
 
+  # IF PAGE IS A DOC TYPE (e.g. pdf, doc, ...) DO NOT PULL HERE --> STRAIGHT TO DB W MARKER
+  if re.search(DOC_PATH_RGX, url_parts.path) is not None:
+    row_dict = {
+      'url': url,
+      'html': "[%s]" % (re.search(DOC_PATH_RGX, url_parts.path).group(1),),
+      'node': NODE_ID
+    }
+    if parent_page_stats is not None:
+      row_dict['parent_stats'] = flist_to_string(parent_page_stats)
+    if parent_url is not None:
+      row_dict['parent_url'] = parent_url
+    if uf.active:
+      Q_payload.Q_out.put(row_dict)
+    return True
+
   # pull page with pyCurl
   buf = cStringIO.StringIO()
   c = pycurl.Curl()

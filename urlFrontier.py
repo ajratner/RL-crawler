@@ -146,8 +146,10 @@ class urlFrontier:
     host_addr = self._get_and_log_addr(url_parts.netloc)
 
     # if the page is not of a safe type log and do not proceed
+    # NOTE: certain types e.g. pdf, doc will be passed and handled specially by crawl_page!
     if re.search(SAFE_PATH_RGX, url_parts.path) is None:
-      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
+      if DEBUG_MODE:
+        self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
       return False
     
     # if DNS was resolved error already reported, do not proceed any further

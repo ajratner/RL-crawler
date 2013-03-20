@@ -10,7 +10,9 @@ RESTART_DUMP = 'restart_seed_list'
 
 # PAGE TYPE PARAMS
 # http://www.fileinfo.com/filetypes/web
-SAFE_PATH_RGX = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?)/?$|^[^\.]*$'
+# note certain document types are included, to be handled specially by crawl_page
+SAFE_PATH_RGX = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?|pdf|docx?|rtf|txt)/?$|^[^\.]*$'
+DOC_PATH_RGX = r'\.(pdf|docx?|rtf|txt)/?$'
 
 
 # CONNECTION / pycurl
