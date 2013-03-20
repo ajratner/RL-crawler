@@ -45,32 +45,36 @@ class MsgReceiver(threading.Thread):
     self.Q_logs = Q_logs
     self.Q_rcount = Q_rcount
 
-  def run(self):
-    
-    # bind a socket to the default port
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(("", DEFAULT_IN_PORT))
-    while True:
+  def run(self):    
+    try:
+     
+      # bind a socket to the default port
+      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s.bind(("", DEFAULT_IN_PORT))
+      while True:
 
-      # receive data and place into urlFrontier via Q_overflow_urls
-      data, addr = s.recvfrom(MSG_BUF_SIZE)
-      data_tuple = list(pickle.loads(data))
+        # receive data and place into urlFrontier via Q_overflow_urls
+        data, addr = s.recvfrom(MSG_BUF_SIZE)
+        data_tuple = list(pickle.loads(data))
+        
+        # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
+        seed_dist = int(data_tuple[2])
+        self.Q_rcount.put(True)
+        if self.Q_logs is not None and DEBUG_MODE:
+          self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
+        
+        if self.uf is not None:
+
+          # pipe into uf via _add_extracted_url
+          url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
+          self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
+
+        # FOR TESTING:
+        else:
+          print url
       
-      # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
-      seed_dist = int(data_tuple[2])
-      self.Q_rcount.put(True)
-      if self.Q_logs is not None and DEBUG_MODE:
-        self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
-      
-      if self.uf is not None:
-
-        # pipe into uf via _add_extracted_url
-        url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
-        self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
-
-      # FOR TESTING:
-      else:
-        print url
+    except:
+      handle_thread_exception(self.getName(), 'receive-thread', self.Q_logs, self.uf)
 
 
 class Q_message_receiver:
@@ -96,24 +100,28 @@ class MsgSender(threading.Thread):
     self.Q_scount = Q_scount
 
   def run(self):
-    while True:
+    try:
+      while True:
 
-      # get a message to be sent from the queue
-      # of the form: (node_num_to, url, seed_dist, parent_page_stats)
-      data_tuple = self.Q_out.get()
-      node_num_to = int(data_tuple[0])
-      host_to = NODE_ADDRESSES[node_num_to]
-      data = pickle.dumps(data_tuple[1:])
-    
-      # bind a socket to the default port
-      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-      s.bind(("", DEFAULT_OUT_PORT))
+        # get a message to be sent from the queue
+        # of the form: (node_num_to, url, seed_dist, parent_page_stats)
+        data_tuple = self.Q_out.get()
+        node_num_to = int(data_tuple[0])
+        host_to = NODE_ADDRESSES[node_num_to]
+        data = pickle.dumps(data_tuple[1:])
+      
+        # bind a socket to the default port
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(("", DEFAULT_OUT_PORT))
 
-      # send message
-      s.sendto(data, (host_to, DEFAULT_IN_PORT))
-      if DEBUG_MODE and self.Q_logs is not None:
-        self.Q_logs.put("%s sent to node %s" % (data_tuple[1], node_num_to))
-      self.Q_scount.put(True)
+        # send message
+        s.sendto(data, (host_to, DEFAULT_IN_PORT))
+        if DEBUG_MODE and self.Q_logs is not None:
+          self.Q_logs.put("%s sent to node %s" % (data_tuple[1], node_num_to))
+        self.Q_scount.put(True)
+
+    except:
+      handle_thread_exception(self.getName(), 'send-thread', self.Q_logs)
 
 
 class Q_message_sender:
@@ -150,53 +158,56 @@ class PostmanThreadDB(threading.Thread):
 
   
   def run(self):
-    with DB_connection(self.db_vars) as handle:
-      while True:
-        
-        # get item from queue, item must be row_dict
-        mail_dict = self.Q_out.get()
+    try:
+      with DB_connection(self.db_vars) as handle:
+        while True:
+          
+          # get item from queue, item must be row_dict
+          mail_dict = self.Q_out.get()
 
-        # if max pages crawled has been reached, quit here; note Q_out will be drained
-        if not self.uf.active:
-          continue
+          # if max pages crawled has been reached, quit here; note Q_out will be drained
+          if not self.uf.active:
+            continue
 
-        # insert row into db
-        if insert_row_dict(handle, self.db_table_name, mail_dict):
-        
-          # if success, then log if applicable
-          self.count_mailed += 1
-          self.uf.payloads_dropped += 1
-          if self.Q_logs is not None and DEBUG_MODE:
-            self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
+          # insert row into db
+          if insert_row_dict(handle, self.db_table_name, mail_dict):
+          
+            # if success, then log if applicable
+            self.count_mailed += 1
+            self.uf.payloads_dropped += 1
+            if self.Q_logs is not None and DEBUG_MODE:
+              self.Q_logs.put("Postman: %s html and features payload dropped!\nTotal payloads dropped = %s" % (mail_dict['url'], self.count_mailed))
 
-        # else log as error if applicable, then pass over
-        else:
-          if self.Q_logs is not None:
-            self.Q_logs.put("DB ERROR: PAYLOAD DROP FOR "+mail_dict['url']+" FAILED!")
-
-        # either way report task done to master joining queue if applicable
-        if self.uf is not None:
-
-          # if max pages crawled has been reached, terminate the crawl
-          if self.count_mailed == MAX_CRAWLED:
-
-            # log if possible
+          # else log as error if applicable, then pass over
+          else:
             if self.Q_logs is not None:
-              self.Q_logs.put("CRAWL REACHED MAX. TERMINATING...")
+              self.Q_logs.put("DB ERROR: PAYLOAD DROP FOR "+mail_dict['url']+" FAILED!")
 
-            # deactivate node, dump for restart and empty active count
-            self.uf.active = False
-            self.uf.dump_for_restart()
+          # either way report task done to master joining queue if applicable
+          if self.uf is not None:
 
-            # drain active count to 0 and block here
-            kill_join(self.uf.Q_active_count)
+            # if max pages crawled has been reached, terminate the crawl
+            if self.count_mailed == MAX_CRAWLED:
 
-          # pull a task record & record done to handle loop & join type blocking
-          task = self.uf.Q_active_count.get()
-          self.uf.Q_active_count.task_done()
-          if self.Q_logs is not None and DEBUG_MODE:
-            self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
+              # log if possible
+              if self.Q_logs is not None:
+                self.Q_logs.put("CRAWL REACHED MAX. TERMINATING...")
 
+              # deactivate node, dump for restart and empty active count
+              self.uf.active = False
+              self.uf.dump_for_restart()
+
+              # drain active count to 0 and block here
+              kill_join(self.uf.Q_active_count)
+
+            # pull a task record & record done to handle loop & join type blocking
+            task = self.uf.Q_active_count.get()
+            self.uf.Q_active_count.task_done()
+            if self.Q_logs is not None and DEBUG_MODE:
+              self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
+
+    except:
+      handle_thread_exception(self.getName(), 'db-thread', self.Q_logs, self.uf)
     
 
 class Q_out_to_db:
@@ -257,6 +268,39 @@ class Q_out_to_file:
 
   def put(self, string):
     self.Q_out.put(string)
+
+
+
+# EXCEPTION HANDLING SUBFUNCTIONS -->
+
+# thread exception handler function
+def handle_thread_exception(thread_name, thread_type, Q_logs, uf=None):
+  
+  # log full exception traceback
+  exc_type, exc_value, exc_tb = sys.exec_info()
+  Q_logs.put('\n***************\nTHREAD EXCEPTION in %s (%s) at %s:\n%s' % (thread_name, thread_type, datetime.datetime.now(), ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))))
+  
+  # log uf detailed state if possible
+  if uf is not None:
+    Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
+
+  # dump for restart if possible
+  if uf is not None:
+    uf.dump_for_restart()
+    Q_logs.put("Restart file dumped successfully")
+  else:
+    Q_logs.put("Restart dump not possible- use last periodic restart dump from normal routine")
+
+  # report failure to activity monitor
+  with DB_connection(DB_VARS) as handle:
+    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), {'failure': 1})
+    Q_logs.put("Sent failure notice to activity table")
+
+  # shut down entire node
+  # NOTE: could have less sensitive reaction down the road...?
+  Q_logs.put("Shutting down node %s" % (node_n,))
+  sys.exit(0)
+
 
 
 # conversion from list of features- numbers or token-lists- to a string e.g. 

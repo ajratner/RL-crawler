@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import traceback
 import urlparse
 import datetime
 import time
@@ -139,7 +140,6 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       uf.Q_active_count.task_done()
 
 
-
 # crawl thread class
 class CrawlThread(threading.Thread):
   def __init__(self, uf, Q_payload, Q_logs):
@@ -149,18 +149,25 @@ class CrawlThread(threading.Thread):
     self.Q_logs = Q_logs
 
   def run(self):
-    while True:
-      crawl_page(self.uf, self.Q_payload, self.Q_logs, self.getName())
+    try:
+      while True:
+        crawl_page(self.uf, self.Q_payload, self.Q_logs, self.getName())
+    except:
+      handle_thread_exception(self.getName(), 'crawl-thread', self.Q_logs, self.uf)
 
 
 # maintenance thread class
 class MaintenanceThread(threading.Thread):
-  def __init__(self, uf):
+  def __init__(self, uf, Q_logs):
     threading.Thread.__init__(self)
     self.uf = uf
+    self.Q_logs = Q_logs
 
   def run(self):
-    self.uf.clean_and_fill_loop()
+    try:
+      self.uf.clean_and_fill_loop()
+    except:
+      handle_thread_exception(self.getName(), 'maint-thread', self.Q_logs, self.uf)
 
 
 # main multi-thread crawl routine
@@ -196,16 +203,23 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 
   # spawn a pool of daemon MaintenanceThread threads
   for i in range(NUMBER_OF_MTHREADS):
-    t = MaintenanceThread(uf)
+    t = MaintenanceThread(uf, Q_logs)
     t.setDaemon(True)
     t.start()
 
   print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
 
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
+  check_count = 0
   while True:
     try:
       time.sleep(ACTIVITY_CHECK_P)
+
+      # every RESTART_DUMP_P time dump for restart
+      if check_count%RESTART_DUMP_P == 0:
+        uf.dump_for_restart()
+        if DEBUG_MODE:
+          Q_logs.put("--dumping for restart")
 
       # send updated info to activity monitor table of central db
       with DB_connection(DB_VARS) as handle:
@@ -224,11 +238,18 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE)
 
         # if all node active counts == 0 and total sent == total received, then stop
+        # OR if any of the failure entries == 1
         nr_sums = np.sum(np.array(node_rows), 0)
         if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3]:
           Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
           print 'crawl completed!'
           sys.exit(0)
+        elif nr_sums[4] > 0:
+          Q_logs.put("FAILURE IN OTHER NODE-- dumping for restart & shutting down")
+          uf.dump_for_restart()
+          sys.exit(0)
+      check_count += 1
+
 
     # In case of Ctrl-C, abort; dump queues for restart first
     except KeyboardInterrupt:
