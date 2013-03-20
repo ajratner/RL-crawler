@@ -56,7 +56,7 @@ def resolve_extracted_link(link, ref_url, Q_logs, base_url=None):
     return link
 
   # look for clear netloc form- 'xxx.xxx.xxx'
-  elif re.search(r'^\w+\.\w+.\w+', link) is not None:
+  elif re.search(r'^\w+\.\w+\.\w+', link) is not None:
     return '//' + link
 
   # look for possible netloc form + path - 'xxx.xxx/yyy'
