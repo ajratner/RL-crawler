@@ -248,7 +248,7 @@ class urlFrontier:
     hqs_to_make = 0
     
     # primary loop- must loop so as not to get stuck in impasse situation
-    while True:
+    while True and uf.active:
 
       # get queue to delete & time to delete at; if no hqs to make then block
       get_block = (hqs_to_make == 0)
@@ -394,10 +394,10 @@ class urlFrontier:
 
       while self.Q_crawl_tasks.full():
         try:
-          r = self.Q_crawl_tasks.get(False)
+          r = self.Q_crawl_tasks.get(True, 1)
           f.write(r[2] + '\n')
         except:
-          break
+          continue
 
       for host_addr, paths in self.hqs.iteritems():
         for path in paths:
@@ -405,10 +405,17 @@ class urlFrontier:
 
       while self.Q_overflow_urls.full():
         try:
-          r = self.Q_overflow_urls.get(False)
+          r = self.Q_overflow_urls.get(True, 1)
           f.write(r[1] + '\n')
         except:
-          break
+          continue
+
+      while self.Q_to_other_nodes.full():
+        try:
+          r = self.Q_to_other_nodes.get(True, 1)
+          f.write(r[1] + '\n')
+        except:
+          continue
 
     # ensure seen filter file is synced
     self.seen.sync()

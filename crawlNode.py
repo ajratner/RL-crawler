@@ -252,7 +252,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
           print 'crawl completed!'
           sys.exit(0)
 
-        # [B] If a thread exception was handled on this node, shit down
+        # [B] If a thread exception was handled on this node, shut down
         elif node_rows[NODE_ID][4] > 0:
           sys.exit(1)
         

@@ -55,7 +55,7 @@ def handle_thread_exception(thread_name, thread_type, uf, Q_logs=None, sys_exit=
   
   # log uf detailed state if possible
   if Q_logs is not None:
-    Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
+    Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s, ton: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize(), uf.Q_to_other_nodes.qsize()))
 
   # dump for restart if possible
   uf.dump_for_restart()
@@ -145,7 +145,7 @@ class MsgSender(threading.Thread):
 
   def run(self):
     try:
-      while True:
+      while True and self.uf.active:
 
         # get a message to be sent from the queue
         # of the form: (node_num_to, url, seed_dist, parent_page_stats)
