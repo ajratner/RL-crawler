@@ -24,11 +24,6 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   # get page from urlFrontier
   next_pull_time,host_addr,url,parent_page_stats,host_seed_dist,parent_url = uf.get_crawl_task()
 
-  # TESTING EXCEPTION HANDLING
-  if parent_url is not None:
-    blurg = [1]
-    print blurg[1]
-
   # report active url
   # NOTE: note that there are problems with this methodology, but that errors will only lead
   # to data redundancy (as opposed to omission)...
