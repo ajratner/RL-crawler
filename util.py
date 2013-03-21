@@ -440,3 +440,17 @@ def get_rows(handle, table_name, n=None):
     q += (" LIMIT %s" % (int(n),))
   handle[1].execute(q)
   return handle[1].fetchall()
+
+
+# delete all rows
+def clear_table(handle, table_name):
+  q = "DELETE FROM " + table_name
+  try:
+    handle[1].execute(q)
+    handle[0].commit()
+    return True
+  except mdb.Error, e:
+    print e
+    handle[0].rollback()
+    return False
+

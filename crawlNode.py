@@ -42,7 +42,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   if re.search(DOC_PATH_RGX, url_parts[2]) is not None:
     row_dict = {
       'url': url,
-      'html': "[%s]" % (re.search(DOC_PATH_RGX, url_parts.path).group(1),),
+      'html': "[%s]" % (re.search(DOC_PATH_RGX, url_parts[2]).group(1),),
       'node': NODE_ID
     }
     if parent_page_stats is not None:
@@ -90,9 +90,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       pulled = False
-
-  # clear active record now
-  uf.thread_active[thread_name] = None
+      uf.thread_active[thread_name] = None
   
   if pulled:
 
@@ -138,11 +136,17 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       if uf.active:
         uf.log_and_add_extracted(host_addr,host_seed_dist, True, t.duration, extracted_url_pkgs)
 
+      # clear thread active here
+      # NOTE: there still is a problem if node restart dump occurs AFTER this but before
+      #       payload actually sent to disk!!!
+      uf.thread_active[thread_name] = None
+
     else:
       Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s, from parent url %s, at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, parent_url, datetime.datetime.now()))
       uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
+      uf.thread_active[thread_name] = None
 
 
 # crawl thread class
@@ -239,7 +243,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         time.sleep(ACTIVITY_CHECK_P/10.0)
 
         # check activity monitor db for global stop conditions
-        node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE)
+        node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE, NUMBER_OF_NODES)
         nr_sums = np.sum(np.array(node_rows), 0)
 
         # [A] Crawl completed if active counts all == 0 & sent == received
@@ -279,7 +283,7 @@ if __name__ == '__main__':
     multithread_crawl(NODE_ID, SEED_LIST)
   elif sys.argv[1] == 'restart' and len(sys.argv) == 2:
     with open(RESTART_DUMP, 'r') as f:
-      restart_seeds = f.readlines()
+      restart_seeds = [re.sub(r'\n', '', l) for l in f.readlines()]
     multithread_crawl(NODE_ID, restart_seeds, True)
   else:
     print 'Usage: python crawlNode.py ...'
