@@ -2,6 +2,7 @@
 *.swp
 *.bloom
 logs/
+data/
 .DS_Store
 batch_tests/
 restart_seed_list
