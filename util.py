@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import sys
+import traceback
 import time
 import MySQLdb as mdb
 import threading
@@ -11,6 +13,7 @@ import re
 import pickle
 import urlparse
 import socket
+import datetime
 
 
 # timing using "with"
@@ -35,6 +38,47 @@ def kill_join(Q):
   while True:
     record = Q.get()
     Q.task_done()
+
+
+# EXCEPTION HANDLING SUBFUNCTIONS -->
+
+# thread exception handler function
+def handle_thread_exception(thread_name, thread_type, uf, Q_logs=None, sys_exit=False):
+  
+  # deactivate url frontier
+  uf.active = False
+  
+  # log full exception traceback
+  exc_type, exc_value, exc_tb = sys.exc_info()
+  if Q_logs is not None:
+    Q_logs.put('\n***************\nTHREAD EXCEPTION in %s (%s) at %s:\n%s' % (thread_name, thread_type, datetime.datetime.now(), ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))))
+  
+  # log uf detailed state if possible
+  if Q_logs is not None:
+    Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
+
+  # dump for restart if possible
+  uf.dump_for_restart()
+  if Q_logs is not None:
+    Q_logs.put("Restart file dumped successfully")
+  else:
+    Q_logs.put("Restart dump not possible- use last periodic restart dump from normal routine")
+
+  # report failure to activity monitor
+  with DB_connection(DB_VARS) as handle:
+    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (NODE_ID+1), {'failure': 1})
+    if Q_logs is not None:
+      Q_logs.put("Sent failure notice to activity table")
+
+  # shut down entire node
+  # NOTE: could have less sensitive reaction down the road...?
+  if sys_exit:
+    if Q_logs is not None:
+      Q_logs.put("Shutting down node %s" % (NODE_ID,))
+    sys.exit(0)
+  else:
+    if Q_logs is not None:
+      Q_logs.put("Shutting down node %s at next node activity check" % (NODE_ID,))
 
 
 # FOR MESSAGING/TRANSFER BETWEEN NODES using simple socket datagram --
@@ -74,7 +118,7 @@ class MsgReceiver(threading.Thread):
           print url
       
     except:
-      handle_thread_exception(self.getName(), 'receive-thread', self.Q_logs, self.uf)
+      handle_thread_exception(self.getName(), 'receive-thread', self.uf, self.Q_logs)
 
 
 class Q_message_receiver:
@@ -93,9 +137,9 @@ class Q_message_receiver:
 
 
 class MsgSender(threading.Thread):
-  def __init__(self, Q_scount, Q_out, Q_logs=None):
+  def __init__(self, Q_scount, uf, Q_logs=None):
     threading.Thread.__init__(self)
-    self.Q_out = Q_out
+    self.uf = uf
     self.Q_logs = Q_logs
     self.Q_scount = Q_scount
 
@@ -105,7 +149,7 @@ class MsgSender(threading.Thread):
 
         # get a message to be sent from the queue
         # of the form: (node_num_to, url, seed_dist, parent_page_stats)
-        data_tuple = self.Q_out.get()
+        data_tuple = self.uf.Q_to_other_nodes.get()
         node_num_to = int(data_tuple[0])
         host_to = NODE_ADDRESSES[node_num_to]
         data = pickle.dumps(data_tuple[1:])
@@ -121,20 +165,20 @@ class MsgSender(threading.Thread):
         self.Q_scount.put(True)
 
     except:
-      handle_thread_exception(self.getName(), 'send-thread', self.Q_logs)
+      handle_thread_exception(self.getName(), 'send-thread', self.uf, self.Q_logs)
 
 
 class Q_message_sender:
-  def __init__(self, Q_logs=None):
+  def __init__(self, uf, Q_logs=None):
     self.Q_logs = Q_logs
     self.Q_scount = Queue.Queue()
     
     # Queue of messages to be sent to other nodes
     # Queue ~ [ (node_num_to, url, seed_dist, parent_page_stats) ]
-    self.Q_out = Queue.Queue()
+    self.uf = uf
 
     # start a sender thread
-    ts = MsgSender(self.Q_scount, self.Q_out, self.Q_logs)
+    ts = MsgSender(self.Q_scount, self.uf, self.Q_logs)
     ts.setDaemon(True)
     ts.start()
 
@@ -207,7 +251,7 @@ class PostmanThreadDB(threading.Thread):
               self.Q_logs.put("Active count: " + str(self.uf.Q_active_count.qsize()))
 
     except:
-      handle_thread_exception(self.getName(), 'db-thread', self.Q_logs, self.uf)
+      handle_thread_exception(self.getName(), 'db-thread', self.uf, self.Q_logs)
     
 
 class Q_out_to_db:
@@ -268,39 +312,6 @@ class Q_out_to_file:
 
   def put(self, string):
     self.Q_out.put(string)
-
-
-
-# EXCEPTION HANDLING SUBFUNCTIONS -->
-
-# thread exception handler function
-def handle_thread_exception(thread_name, thread_type, Q_logs, uf=None):
-  
-  # log full exception traceback
-  exc_type, exc_value, exc_tb = sys.exec_info()
-  Q_logs.put('\n***************\nTHREAD EXCEPTION in %s (%s) at %s:\n%s' % (thread_name, thread_type, datetime.datetime.now(), ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))))
-  
-  # log uf detailed state if possible
-  if uf is not None:
-    Q_logs.put("uf status: (pd: %s, ct: %s, hqs: %s, ou: %s, hqc: %s)" % (uf.payloads_dropped, uf.Q_crawl_tasks.qsize(), sum([len(v) for k,v in uf.hqs.iteritems()]), uf.Q_overflow_urls.qsize(), uf.Q_hq_cleanup.qsize()))
-
-  # dump for restart if possible
-  if uf is not None:
-    uf.dump_for_restart()
-    Q_logs.put("Restart file dumped successfully")
-  else:
-    Q_logs.put("Restart dump not possible- use last periodic restart dump from normal routine")
-
-  # report failure to activity monitor
-  with DB_connection(DB_VARS) as handle:
-    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), {'failure': 1})
-    Q_logs.put("Sent failure notice to activity table")
-
-  # shut down entire node
-  # NOTE: could have less sensitive reaction down the road...?
-  Q_logs.put("Shutting down node %s" % (node_n,))
-  sys.exit(0)
-
 
 
 # conversion from list of features- numbers or token-lists- to a string e.g. 

@@ -49,70 +49,74 @@ def resolve_extracted_link(link, ref_url, Q_logs, base_url=None):
 
   # following RFC 1808 <scheme>://<net_loc>/<path>;<params>?<query>#<fragment>
 
-  # first look for absolute link cases
+  # --> First calculate url parts & base root paths
 
-  # first look for '//'- if present urlparse will handle properly
+  # calculate root path for relative links
+  if re.search(r'//', ref_url) is None:
+    Q_logs.put("LINK PARSE ERROR: INCOMPLETE ref url %s" % (ref_url,))
+    return None
+  rup = urlparse.urlsplit(ref_url)
+  
+  # calculate the 'base root' for '/...'
+  if base_url is not None:
+    base_root = re.sub(r'/$', '', base_url) + '/'
+  else:
+    base_root = rup.scheme + '://' + rup.netloc + '/'
+
+  # calculate the 'prox root' for '...'
+  prox_root = rup.scheme + '://' + rup.netloc
+  if rup.path == '':
+    prox_root += '/'
+  else:
+    prox_root += re.sub(r'[^/]+$', '', rup.path)
+    prox2_root = re.sub(r'[^/]+/$', '', prox_root)
+
+  # --> Next, resolve via stepwise filtering
+
+  # [1] look for '//'- if present urlparse will handle properly on own
   if re.search(r'//', link) is not None:
     return link
 
-  # look for clear netloc form- 'xxx.xxx.xxx'
+  # [2] look for netloc form- 'xxx.xxx.xxx'
   elif re.search(r'^\w+\.\w+\.\w+', link) is not None:
-    return '//' + link
+    
+    # [2a] however make sure this isn't a relative link of safe type ending
+    if re.search(SAFE_PATH_RGX, link) is not None:
+      return prox_root + link
+    else:
+      return '//' + link
 
-  # look for possible netloc form + path - 'xxx.xxx/yyy'
+  # [3] look for possible netloc form + path - 'xxx.xxx/yyy'
   elif re.search(r'^\w+\.\w+/', link) is not None:
     return '//' + link
 
-  # look for known throw-away forms
+  # [4] look for known throw-away forms
   elif re.search(r'^mailto:', link) is not None:
     return None
   
-  # next look for relative link cases
+  # [5] look for '^/'
+  elif re.search(r'^/', link) is not None:
+    return base_root + link[1:]
+
+  # [6] look for '^./'
+  elif re.search(r'^\./', link) is not None:
+    return prox_root + link[2:]
+
+  # [7] look for '^../'
+  elif re.search(r'^\.\./', link) is not None:
+    return prox2_root + link[3:]
+
+  # [8] look for rel page form '^xxxx.yyy'
+  elif re.search(r'^[^\./]+\.[^\./]+(;|\?|#|$)', link) is not None:
+    return prox_root + link
+
+  # [*] NOTE: TO-DO --> run testing, try to think of further catches
   else:
+    return None
 
-    # calculate root path for relative links
-    if re.search(r'//', ref_url) is None:
-      Q_logs.put("LINK PARSE ERROR: INCOMPLETE ref url %s" % (ref_url,))
-      return None
-    rup = urlparse.urlsplit(ref_url)
-    
-    # calculate the 'base root' for '/...'
-    if base_url is not None:
-      base_root = re.sub(r'/$', '', base_url) + '/'
-    else:
-      base_root = rup.scheme + '://' + rup.netloc + '/'
-
-    # calculate the 'prox root' for '...'
-    prox_root = rup.scheme + '://' + rup.netloc
-    if rup.path == '':
-      prox_root += '/'
-    else:
-      prox_root += re.sub(r'[^/]+$', '', rup.path)
-      prox2_root = re.sub(r'[^/]+/$', '', prox_root)
-
-    # look for '/'
-    if re.search(r'^/', link) is not None:
-      return base_root + link[1:]
-
-    # look for './'
-    if re.search(r'^\./', link) is not None:
-      return prox_root + link[2:]
-
-    # look for '../'
-    if re.search(r'^\.\./', link) is not None:
-      return prox2_root + link[3:]
-
-    # look for rel page form '' + 'xxxx.yyy'
-    elif re.search(r'^[^\./]+\.[^\./]+$', link) is not None:
-      return prox_root + link
-
-    # NOTE: TO-DO --> run testing, try to think of further catches
-    else:
-      return None
-
-      # log for improvement purposes
-      if Q_logs is not None:
-        Q_logs.put("LINK PARSE EXCEPTION: %s" % (link,))
+    # log for improvement purposes
+    if Q_logs is not None:
+      Q_logs.put("LINK PARSE EXCEPTION: %s" % (link,))
 
 
 # link extractor subfunction
@@ -136,7 +140,9 @@ def extract_link_data(html, ref_url, Q_logs=None):
       # try to resolve link
       link_url = resolve_extracted_link(link.group(1), ref_url, Q_logs, base_url)
       if link_url is not None:
-        urls.append(link_url)
+
+        # discard fragment ('#...') data here
+        urls.append(re.sub(r'#.*$', '', link_url))
 
         # url data: (link_text_tokens)
         url_data.append((mf_words(link.group(2)),))

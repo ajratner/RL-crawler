@@ -11,7 +11,7 @@ RESTART_DUMP = 'restart_seed_list'
 # PAGE TYPE PARAMS
 # http://www.fileinfo.com/filetypes/web
 # note certain document types are included, to be handled specially by crawl_page
-SAFE_PATH_RGX = r'\.((x|p|r|s)?htm?l?|php\d?|asp|cfml?|pdf|docx?|rtf|txt)/?$|^[^\.]*$'
+SAFE_PATH_RGX = r'(\.((x|p|r|s)?htm?l?|php\d?|aspx?|cfml?|pdf|docx?|rtf|txt)|^/?[^\.]*)/?(;|\?|#|$)'
 DOC_PATH_RGX = r'\.(pdf|docx?|rtf|txt)/?$'
 
 
@@ -37,7 +37,6 @@ MSG_BUF_SIZE = 1024
 # NODE CONTROL PARAMS
 DB_NODE_ACTIVITY_TABLE = 'activity_monitor'
 ACTIVITY_CHECK_P = 60
-RESTART_DUMP_P = 10  # will auto-dump every ~ RESTART_DUMP_P*ACTIVITY_CHECK_P
 
 
 # PAYLOAD DB

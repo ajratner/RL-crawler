@@ -24,6 +24,11 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   # get page from urlFrontier
   next_pull_time,host_addr,url,parent_page_stats,host_seed_dist,parent_url = uf.get_crawl_task()
 
+  # TESTING EXCEPTION HANDLING
+  if parent_url is not None:
+    blurg = [1]
+    print blurg[1]
+
   # report active url
   # NOTE: note that there are problems with this methodology, but that errors will only lead
   # to data redundancy (as opposed to omission)...
@@ -39,7 +44,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   url_addr = urlparse.urlunsplit(url_parts)
 
   # IF PAGE IS A DOC TYPE (e.g. pdf, doc, ...) DO NOT PULL HERE --> STRAIGHT TO DB W MARKER
-  if re.search(DOC_PATH_RGX, url_parts.path) is not None:
+  if re.search(DOC_PATH_RGX, url_parts[2]) is not None:
     row_dict = {
       'url': url,
       'html': "[%s]" % (re.search(DOC_PATH_RGX, url_parts.path).group(1),),
@@ -61,6 +66,8 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
   c.setopt(c.USERAGENT, USER_AGENT)
   c.setopt(c.URL, url_addr)
   c.setopt(c.HTTPHEADER, ["Host: " + root_url])
+  if parent_url is not None:
+    c.setopt(c.REFERER, parent_url)
   c.setopt(c.FOLLOWLOCATION, 1)
   c.setopt(c.MAXREDIRS, 5)
   c.setopt(c.TIMEOUT, CURLOPT_TIMEOUT)
@@ -83,11 +90,14 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       c.perform()
       pulled = True
     except Exception as e:
-      Q_logs.put('%s: CONNECTION ERROR: %s at %s: %s' % (thread_name, url, datetime.datetime.now(), e[1]))
+      Q_logs.put('%s: CONNECTION ERROR: %s from parent url %s at %s: %s' % (thread_name, url, parent_url, datetime.datetime.now(), e[1]))
       uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
       pulled = False
+
+  # clear active record now
+  uf.thread_active[thread_name] = None
   
   if pulled:
 
@@ -134,7 +144,7 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
         uf.log_and_add_extracted(host_addr,host_seed_dist, True, t.duration, extracted_url_pkgs)
 
     else:
-      Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, datetime.datetime.now()))
+      Q_logs.put('%s: CONNECTION ERROR: HTTP code %s from %s, from parent url %s, at %s' % (thread_name, int(c.getinfo(c.HTTP_CODE)), url, parent_url, datetime.datetime.now()))
       uf.log_and_add_extracted(host_addr, host_seed_dist, False)
       task = uf.Q_active_count.get()
       uf.Q_active_count.task_done()
@@ -153,7 +163,7 @@ class CrawlThread(threading.Thread):
       while True:
         crawl_page(self.uf, self.Q_payload, self.Q_logs, self.getName())
     except:
-      handle_thread_exception(self.getName(), 'crawl-thread', self.Q_logs, self.uf)
+      handle_thread_exception(self.getName(), 'crawl-thread', self.uf, self.Q_logs)
 
 
 # maintenance thread class
@@ -167,7 +177,7 @@ class MaintenanceThread(threading.Thread):
     try:
       self.uf.clean_and_fill_loop()
     except:
-      handle_thread_exception(self.getName(), 'maint-thread', self.Q_logs, self.uf)
+      handle_thread_exception(self.getName(), 'maint-thread', self.uf, self.Q_logs)
 
 
 # main multi-thread crawl routine
@@ -177,20 +187,20 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
   Q_logs = Q_out_to_file(LOG_REL_PATH)
   Q_logs.put("\n\nSession Start at %s" % (datetime.datetime.now(),))
 
-  # instantiate a node message sender
-  Q_ms = Q_message_sender(Q_logs)
-
   # instantiate one urlFontier object for all threads
-  uf = urlFrontier(node_n, seen_persist, Q_ms, Q_logs)
+  uf = urlFrontier(node_n, seen_persist, Q_logs)
+
+  # instantiate a queue-out-to-db handler
+  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
+
+  # instantiate a node message sender
+  Q_ms = Q_message_sender(uf, Q_logs)
 
   # instantiate a node message receiver now that urlFrontier is initialized with seed list
   Q_mr = Q_message_receiver(uf, Q_logs)
 
   # wait an optional start delay time while still receiving messages to active uf
   time.sleep(NODE_START_DELAY)
-
-  # instantiate a queue-out-to-db handler
-  Q_payload = Q_out_to_db(DB_VARS, DB_PAYLOAD_TABLE, uf, Q_logs)
 
   # initialize the urlFrontier
   uf.initialize(initial_url_list)
@@ -209,17 +219,16 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 
   print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
 
+  # initialize activity monitor row
+  with DB_connection(DB_VARS) as handle:
+    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0}
+    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), row_dict)
+
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
   check_count = 0
-  while True:
-    try:
+  try: 
+    while True:
       time.sleep(ACTIVITY_CHECK_P)
-
-      # every RESTART_DUMP_P time dump for restart
-      if check_count%RESTART_DUMP_P == 0:
-        uf.dump_for_restart()
-        if DEBUG_MODE:
-          Q_logs.put("--dumping for restart")
 
       # send updated info to activity monitor table of central db
       with DB_connection(DB_VARS) as handle:
@@ -236,27 +245,35 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 
         # check activity monitor db for global stop conditions
         node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE)
-
-        # if all node active counts == 0 and total sent == total received, then stop
-        # OR if any of the failure entries == 1
         nr_sums = np.sum(np.array(node_rows), 0)
+
+        # [A] Crawl completed if active counts all == 0 & sent == received
         if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3]:
           Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
           print 'crawl completed!'
           sys.exit(0)
+
+        # [B] If a thread exception was handled on this node, shit down
+        elif node_rows[NODE_ID][4] > 0:
+          sys.exit(1)
+        
+        # [C] If a thread exception was handled on another node, shut down
         elif nr_sums[4] > 0:
           Q_logs.put("FAILURE IN OTHER NODE-- dumping for restart & shutting down")
           uf.dump_for_restart()
-          sys.exit(0)
+          sys.exit(2)
+        
+        # [D] If a manual stop was ordered via the activity monitor tablem shut down
+        elif nr_sums[5] > 0:
+          Q_logs.put("MANUAL STOP ORDERED-- dumping for restart & shutting down")
+          uf.dump_for_restart()
+          sys.exit(3)
+          
       check_count += 1
 
-
-    # In case of Ctrl-C, abort; dump queues for restart first
-    except KeyboardInterrupt:
-      uf.dump_for_restart()
-      Q_logs.put("*Session aborted with Ctrl-C!")
-      print 'crawl aborted!'
-      sys.exit(0)
+  # In case of Ctrl-C, or any other failure, abort gracefully
+  except (Exception, KeyboardInterrupt):
+    handle_thread_exception('main', 'main', uf, Q_logs, True)
 
 
 #

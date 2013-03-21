@@ -31,9 +31,8 @@ from node_locals import *
 
 class urlFrontier:
   
-  def __init__(self, node_n, seen_persist, Q_message_sender=None, Q_logs=None):
+  def __init__(self, node_n, seen_persist, Q_logs=None):
     self.node_n = node_n
-    self.Q_message_sender = Q_message_sender
     self.Q_logs = Q_logs
     self.total_crawled = 0
     self.payloads_dropped = 0
@@ -81,6 +80,10 @@ class urlFrontier:
     # NOTE: note that there are problems with this methodology, but that errors will only lead
     # to data redundancy (as opposed to omission)...
     self.thread_active = {}
+    
+    # Queue of messages to be sent to other nodes
+    # Queue ~ [ (node_num_to, url, seed_dist, parent_page_stats) ]
+    self.Q_to_other_nodes = Queue.Queue()
 
 
   # primary routine for getting a crawl task from queue
@@ -173,7 +176,7 @@ class urlFrontier:
       else:
         url_node = hash(host_addr) % NUMBER_OF_NODES
       if url_node != self.node_n:
-        self.Q_message_sender.send((url_node, url, ref_page_stats, seed_dist, parent_url))
+        self.Q_to_other_nodes.put((url_node, url, ref_page_stats, seed_dist, parent_url))
         return False
 
     # if this is an internal link, and not from other node, send directly to the serving hq
@@ -344,7 +347,8 @@ class urlFrontier:
 
     # if the page is not of a safe type log and do not proceed
     if re.search(SAFE_PATH_RGX, url_parts.path) is None:
-      self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
+      if DEBUG_MODE:
+        self.Q_logs.put("*UN-SAFE PAGE TYPE SKIPPED: %s" % (url,))
       return False
 
     # if DNS was resolved error already reported, do not proceed any further
@@ -357,7 +361,7 @@ class urlFrontier:
     else:
       url_node = hash(host_addr) % NUMBER_OF_NODES
     if url_node != self.node_n:
-      self.Q_message_sender.send((url_node, url, None, 0, None))
+      self.Q_to_other_nodes.put((url_node, url, None, 0, None))
       return False
 
     # add to an existing hq, or create new one & log new crawl task, or add to overflow
@@ -377,12 +381,16 @@ class urlFrontier:
   # routine called on abort (by user interrupt or by MAX_CRAWLED count being reached) to
   # save current contents of all queues to disk & seen filter flushed for restart
   def dump_for_restart(self):
+
+    # ensure url frontier deactivated
+    self.active = False
     
     # get all urls in Q_crawl_tasks, hqs, or Q_overflow_urls
     # only get urls as these will be re-injected through the initialize method of uf
     with open(RESTART_DUMP, 'w') as f:
       for thead_name, url in self.thread_active.iteritems():
-        f.write(url + '\n')
+        if url is not None:
+          f.write(url + '\n')
 
       while self.Q_crawl_tasks.full():
         try:
