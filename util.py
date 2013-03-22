@@ -92,31 +92,38 @@ class MsgReceiver(threading.Thread):
   def run(self):    
     try:
      
-      # bind a socket to the default port
+      # bind a blocking socket for receiving messages
       s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s.setblocking(1)
       s.bind(("", DEFAULT_IN_PORT))
-      while True:
 
-        # receive data and place into urlFrontier via Q_overflow_urls
+      # bind a socket for sending confirmation signal
+      c = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      c.bind(("", CONFIRM_OUT_PORT))
+
+      # receive messages and send confirm signal once added to uf
+      while True and self.uf.active:
+
+        # BLOCK until received data and place into urlFrontier via Q_overflow_urls
         data, addr = s.recvfrom(MSG_BUF_SIZE)
         data_tuple = list(pickle.loads(data))
         
         # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
         seed_dist = int(data_tuple[2])
-        self.Q_rcount.put(True)
         if self.Q_logs is not None and DEBUG_MODE:
           self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
         
-        if self.uf is not None:
+        # pipe into uf via _add_extracted_url
+        url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
+        self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
 
-          # pipe into uf via _add_extracted_url
-          url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
-          self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
+        # once data has been processed into url frontier, send confirmation
+        # NOTE: could be faster -> less cautious here...
+        self.Q_rcount.put(True)
+        c.sendto("success", (addr, CONFIRM_IN_PORT))
+        if self.Q_logs is not None and DEBUG_MODE:
+          self.Q_logs.put("Sent confirmation of reception of %s to node at %s" % (data_tuple[0], addr))
 
-        # FOR TESTING:
-        else:
-          print url
-      
     except:
       handle_thread_exception(self.getName(), 'receive-thread', self.uf, self.Q_logs)
 
@@ -145,6 +152,16 @@ class MsgSender(threading.Thread):
 
   def run(self):
     try:
+
+      # bind a socket for sending messages
+      s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      s.bind(("", DEFAULT_OUT_PORT))
+
+      # bind a timeout-bounded blocking socket for receiving confirmation signals
+      c = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+      c.settimeout(CONFIRM_WAIT_TIME)
+      c.bind(("", CONFIRM_IN_PORT))
+
       while True and self.uf.active:
 
         # get a message to be sent from the queue
@@ -154,15 +171,34 @@ class MsgSender(threading.Thread):
         host_to = NODE_ADDRESSES[node_num_to]
         data = pickle.dumps(data_tuple[1:])
       
-        # bind a socket to the default port
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind(("", DEFAULT_OUT_PORT))
-
         # send message
         s.sendto(data, (host_to, DEFAULT_IN_PORT))
         if DEBUG_MODE and self.Q_logs is not None:
           self.Q_logs.put("%s sent to node %s" % (data_tuple[1], node_num_to))
-        self.Q_scount.put(True)
+
+        # wait for confirmation; if no confirm, recycle, log error
+        try:
+          data, addr = c.recvfrom(MSG_BUF_SIZE)
+          if data == "success":
+
+            # on success - update sent count, uf active count, log optionally
+            self.Q_scount.put(True)
+            task = self.uf.Q_active_count.get()
+            self.uf.Q_active_count.task_done()
+            if self.Q_logs is not None and DEBUG_MODE:
+              self.Q_logs.put("Confirmation on %s received by %s" % (data_tuple[1], addr))
+          
+          # handle improper confirm message (shouldn't occur...)
+          else:
+            self.uf.Q_to_other_nodes.put(data_tuple)
+            if self.Q_logs is not None:
+              self.Q_logs.put("Confirmation message error: %s, placing message back in out queue..." % (data,))
+
+        # handle confirmation receipt timeout- recycle message back to out queue
+        except:
+          self.uf.Q_to_other_nodes.put(data_tuple)
+          if self.Q_logs is not None:
+            self.Q_logs.put("CONFIRMATION TIMEOUT FROM NODE %s on receipt of %s, placing back in out queue..." % (node_num_to, data_tuple[1]))
 
     except:
       handle_thread_exception(self.getName(), 'send-thread', self.uf, self.Q_logs)

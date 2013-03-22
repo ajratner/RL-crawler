@@ -169,6 +169,14 @@ class urlFrontier:
     if seed_dist > MAX_SEED_DIST and MAX_SEED_DIST > -1:
       return False
 
+    # --> At this point, marker should be added to active count
+    #     This will be removed when url is either:
+    #       (A) sent to another node successfully
+    #       (B) dropped to payload database
+    self.Q_active_count.put(True)  
+    if DEBUG_MODE:
+      self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
+
     # if the page belongs to another node, pass to message sending service
     if not from_other_node:
       if DISTR_ON_FULL_URL:
@@ -183,11 +191,8 @@ class urlFrontier:
     if seed_dist == ref_seed_dist and not from_other_node:
       self.hqs[host_addr].append((url, ref_page_stats, seed_dist, parent_url))
 
-      # add to active count & update total count
-      self.Q_active_count.put(True)
+      # update total count
       self.total_crawled += 1
-      if DEBUG_MODE:
-        self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
     
     # else send to overflow_urls to stay cautiously thread safe
     else:
@@ -196,10 +201,7 @@ class urlFrontier:
       self.Q_overflow_urls.put((host_addr, url, ref_page_stats, seed_dist, parent_url))
 
       # add to active count
-      self.Q_active_count.put(True)
       self.total_crawled += 1
-      if DEBUG_MODE:
-        self.Q_logs.put("Active count: %s" % self.Q_active_count.qsize())
 
 
   # subfunction for getting IP address either from DNS cache or web
@@ -248,7 +250,7 @@ class urlFrontier:
     hqs_to_make = 0
     
     # primary loop- must loop so as not to get stuck in impasse situation
-    while True and uf.active:
+    while True and self.active:
 
       # get queue to delete & time to delete at; if no hqs to make then block
       get_block = (hqs_to_make == 0)

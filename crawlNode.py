@@ -181,6 +181,11 @@ class MaintenanceThread(threading.Thread):
 
 # main multi-thread crawl routine
 def multithread_crawl(node_n, initial_url_list, seen_persist=False):
+
+  # initialize activity monitor row- need to esp clear stop flags from previous run!
+  with DB_connection(DB_VARS) as handle:
+    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0}
+    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), row_dict)
   
   # instantiate a queue-out-to-logs handler
   Q_logs = Q_out_to_file(LOG_REL_PATH)
@@ -217,11 +222,6 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
     t.start()
 
   print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
-
-  # initialize activity monitor row
-  with DB_connection(DB_VARS) as handle:
-    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0}
-    insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), row_dict)
 
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
   check_count = 0
