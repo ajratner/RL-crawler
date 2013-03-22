@@ -40,6 +40,8 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
 
   # IF PAGE IS A DOC TYPE (e.g. pdf, doc, ...) DO NOT PULL HERE --> STRAIGHT TO DB W MARKER
   if re.search(DOC_PATH_RGX, url_parts[2]) is not None:
+
+    # prep simple row with e.g. [pdf] instead of pulled html
     row_dict = {
       'url': url,
       'html': "[%s]" % (re.search(DOC_PATH_RGX, url_parts[2]).group(1),),
@@ -49,10 +51,21 @@ def crawl_page(uf, Q_payload, Q_logs, thread_name='Thread-?'):
       row_dict['parent_stats'] = flist_to_string(parent_page_stats)
     if parent_url is not None:
       row_dict['parent_url'] = parent_url
+    
+    # submit to db messenger
     if uf.active:
       Q_payload.Q_out.put(row_dict)
-    return True
 
+    # log to url frontier(!!); log as failed pull (for now)
+    if uf.active:
+      uf.log_and_add_extracted(host_addr,host_seed_dist, False)
+
+    # clear active thread marker
+    uf.thread_active[thread_name] = None
+
+    # exit here
+    return True
+  
   # pull page with pyCurl
   buf = cStringIO.StringIO()
   c = pycurl.Curl()
@@ -220,11 +233,11 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
     t = MaintenanceThread(uf, Q_logs)
     t.setDaemon(True)
     t.start()
-
-  print 'crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS)
+  
+  # log crawl as started
+  Q_logs.put('crawl started (NODE %s of %s, %s + %s threads); Ctrl-C to abort' % ((node_n+1), NUMBER_OF_NODES, NUMBER_OF_CTHREADS, NUMBER_OF_MTHREADS))
 
   # main loop- waits for node active count queues to be empty & all inter-node messaging done
-  check_count = 0
   try: 
     while True:
       time.sleep(ACTIVITY_CHECK_P)
@@ -250,7 +263,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         # [A] Crawl completed if active counts all == 0 & sent == received & all have been init
         if nr_sums[2] == 0 and nr_sums[3] == nr_sums[4] and nr_sums[1] == NUMBER_OF_NODES:
           Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
-          print 'crawl completed!'
+          time.sleep(5)
           sys.exit(0)
 
         # [B] If a thread exception was handled on this node, shut down
@@ -269,8 +282,6 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
           uf.dump_for_restart()
           sys.exit(3)
           
-      check_count += 1
-
   # In case of Ctrl-C, or any other failure, abort gracefully
   except (Exception, KeyboardInterrupt):
     handle_thread_exception('main', 'main', uf, Q_logs, True)

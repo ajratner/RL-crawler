@@ -102,7 +102,7 @@ class MsgReceiver(threading.Thread):
       c.bind(("", CONFIRM_OUT_PORT))
 
       # receive messages and send confirm signal once added to uf
-      while True and self.uf.active:
+      while self.uf.active:
 
         # BLOCK until received data and place into urlFrontier via Q_overflow_urls
         data, addr = s.recvfrom(MSG_BUF_SIZE)
@@ -162,7 +162,7 @@ class MsgSender(threading.Thread):
       c.settimeout(CONFIRM_WAIT_TIME)
       c.bind(("", CONFIRM_IN_PORT))
 
-      while True and self.uf.active:
+      while self.uf.active:
 
         # get a message to be sent from the queue
         # of the form: (node_num_to, url, seed_dist, parent_page_stats)

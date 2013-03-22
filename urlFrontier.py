@@ -90,9 +90,9 @@ class urlFrontier:
   def get_crawl_task(self):
     if self.active:
       return self.Q_crawl_tasks.get()
-    else:
 
-      # block
+    # if url frontier shutdown, block indefinitely (until node shutdown)
+    else:
       while True:
         time.sleep(10)
   
@@ -250,7 +250,7 @@ class urlFrontier:
     hqs_to_make = 0
     
     # primary loop- must loop so as not to get stuck in impasse situation
-    while True and self.active:
+    while self.active:
 
       # get queue to delete & time to delete at; if no hqs to make then block
       get_block = (hqs_to_make == 0)
@@ -308,6 +308,7 @@ class urlFrontier:
           hqs_to_make -= 1
           self.Q_overflow_urls.task_done()
           self.Q_hq_cleanup.task_done()
+          break
 
 
   # primary routine for initialization of url frontier / hqs
