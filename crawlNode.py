@@ -184,7 +184,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 
   # initialize activity monitor row- need to esp clear stop flags from previous run!
   with DB_connection(DB_VARS) as handle:
-    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0}
+    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0, 'stop_order':0, 'init':0}
     insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), row_dict)
   
   # instantiate a queue-out-to-logs handler
@@ -234,7 +234,8 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         row_dict = {
           'active_count': uf.Q_active_count.qsize(), 
           'rcount': Q_mr.rcount(),
-          'scount': Q_ms.scount() }
+          'scount': Q_ms.scount(),
+          'init': 1 }
         insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n + 1), row_dict)
         if DEBUG_MODE:
           Q_logs.put("Submitted node activity status (a: %s, s: %s, r: %s)" % (uf.Q_active_count.qsize(), Q_ms.scount(), Q_mr.rcount()))
@@ -246,8 +247,8 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         node_rows = get_rows(handle, DB_NODE_ACTIVITY_TABLE, NUMBER_OF_NODES)
         nr_sums = np.sum(np.array(node_rows), 0)
 
-        # [A] Crawl completed if active counts all == 0 & sent == received
-        if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3]:
+        # [A] Crawl completed if active counts all == 0 & sent == received & all have been init
+        if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3] and nr_sums[6] == NUMBER_OF_NODES:
           Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
           print 'crawl completed!'
           sys.exit(0)
