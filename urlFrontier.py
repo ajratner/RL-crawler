@@ -394,7 +394,7 @@ class urlFrontier:
         if url is not None:
           f.write(url + '\n')
 
-      while self.Q_crawl_tasks.full():
+      while not self.Q_crawl_tasks.empty():
         try:
           r = self.Q_crawl_tasks.get(True, 1)
           f.write(r[2] + '\n')
@@ -405,14 +405,14 @@ class urlFrontier:
         for path in paths:
           f.write(path[0] + '\n')
 
-      while self.Q_to_other_nodes.full():
+      while not self.Q_to_other_nodes.empty():
         try:
           r = self.Q_to_other_nodes.get(True, 1)
           f.write(r[1] + '\n')
         except:
           continue
 
-      while self.Q_overflow_urls.full():
+      while not self.Q_overflow_urls.empty():
         try:
           r = self.Q_overflow_urls.get(True, 1)
           f.write(r[1] + '\n')
