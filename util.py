@@ -120,7 +120,7 @@ class MsgReceiver(threading.Thread):
         # once data has been processed into url frontier, send confirmation
         # NOTE: could be faster -> less cautious here...
         self.Q_rcount.put(True)
-        c.sendto("success", (addr, CONFIRM_IN_PORT))
+        c.sendto("success", (addr[0], CONFIRM_IN_PORT))
         if self.Q_logs is not None and DEBUG_MODE:
           self.Q_logs.put("Sent confirmation of reception of %s to node at %s" % (data_tuple[0], addr))
 
