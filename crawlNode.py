@@ -184,7 +184,7 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
 
   # initialize activity monitor row- need to esp clear stop flags from previous run!
   with DB_connection(DB_VARS) as handle:
-    row_dict = {'active_count':0, 'rcount':0, 'scount':0, 'failure':0, 'stop_order':0, 'init':0}
+    row_dict = {'init':0, 'active_count':0, 'rcount':0, 'scount':0, 'failure':0, 'stop_order':0}
     insert_or_update(handle, DB_NODE_ACTIVITY_TABLE, (node_n+1), row_dict)
   
   # instantiate a queue-out-to-logs handler
@@ -248,23 +248,23 @@ def multithread_crawl(node_n, initial_url_list, seen_persist=False):
         nr_sums = np.sum(np.array(node_rows), 0)
 
         # [A] Crawl completed if active counts all == 0 & sent == received & all have been init
-        if nr_sums[1] == 0 and nr_sums[2] == nr_sums[3] and nr_sums[6] == NUMBER_OF_NODES:
+        if nr_sums[2] == 0 and nr_sums[3] == nr_sums[4] and nr_sums[1] == NUMBER_OF_NODES:
           Q_logs.put("crawl completed at %s" % (datetime.datetime.now(),))
           print 'crawl completed!'
           sys.exit(0)
 
         # [B] If a thread exception was handled on this node, shut down
-        elif node_rows[NODE_ID][4] > 0:
+        elif node_rows[NODE_ID][5] > 0:
           sys.exit(1)
         
         # [C] If a thread exception was handled on another node, shut down
-        elif nr_sums[4] > 0:
+        elif nr_sums[5] > 0:
           Q_logs.put("FAILURE IN OTHER NODE-- dumping for restart & shutting down")
           uf.dump_for_restart()
           sys.exit(2)
         
         # [D] If a manual stop was ordered via the activity monitor tablem shut down
-        elif nr_sums[5] > 0:
+        elif nr_sums[6] > 0:
           Q_logs.put("MANUAL STOP ORDERED-- dumping for restart & shutting down")
           uf.dump_for_restart()
           sys.exit(3)
