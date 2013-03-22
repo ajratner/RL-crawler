@@ -405,16 +405,16 @@ class urlFrontier:
         for path in paths:
           f.write(path[0] + '\n')
 
-      while self.Q_overflow_urls.full():
+      while self.Q_to_other_nodes.full():
         try:
-          r = self.Q_overflow_urls.get(True, 1)
+          r = self.Q_to_other_nodes.get(True, 1)
           f.write(r[1] + '\n')
         except:
           continue
 
-      while self.Q_to_other_nodes.full():
+      while self.Q_overflow_urls.full():
         try:
-          r = self.Q_to_other_nodes.get(True, 1)
+          r = self.Q_overflow_urls.get(True, 1)
           f.write(r[1] + '\n')
         except:
           continue
