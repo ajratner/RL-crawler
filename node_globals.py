@@ -13,6 +13,7 @@ RESTART_DUMP = 'restart_seed_list'
 # note certain document types are included, to be handled specially by crawl_page
 SAFE_PATH_RGX = r'(\.((x|p|r|s)?htm?l?|php\d?|aspx?|cfml?|pdf|docx?|rtf|txt)|^/?[^\.]*)/?(;|\?|#|$)'
 DOC_PATH_RGX = r'\.(pdf|docx?|rtf|txt)/?$'
+BLOCK_URL_RGX = r'(law|print|www)\.onecle\.com'
 
 
 # CONNECTION / pycurl

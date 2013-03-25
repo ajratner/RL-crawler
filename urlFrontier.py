@@ -138,6 +138,10 @@ class urlFrontier:
     # NOTE: it is the responsibility of the crawlNode.py extract_links fn to server proper url
     url = re.sub(r'/$', '', url_in)
 
+    # BLOCK certain urls based on manual block rgx
+    if re.search(BLOCK_URL_RGX, url) is not None:
+      return False
+
     # if url already seen do not proceed, else log as seen
     if url in self.seen:
       return False
@@ -343,6 +347,10 @@ class urlFrontier:
 
     # assume unseen and input to seen list, add to active count
     self.seen.add(url)
+
+    # BLOCK certain urls based on manual block rgx
+    if re.search(BLOCK_URL_RGX, url) is not None:
+      return False
 
     # get host IP address of url
     url_parts = urlparse.urlsplit(url)

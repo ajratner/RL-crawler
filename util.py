@@ -106,23 +106,30 @@ class MsgReceiver(threading.Thread):
 
         # BLOCK until received data and place into urlFrontier via Q_overflow_urls
         data, addr = s.recvfrom(MSG_BUF_SIZE)
-        data_tuple = list(pickle.loads(data))
+        try:
+          data_tuple = list(pickle.loads(data))
         
-        # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
-        seed_dist = int(data_tuple[2])
-        if self.Q_logs is not None and DEBUG_MODE:
-          self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
-        
-        # pipe into uf via _add_extracted_url
-        url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
-        self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
+          # data_tuple should be of form (url, ref_page_stats, seed_dist, parent_url)
+          seed_dist = int(data_tuple[2])
+          if self.Q_logs is not None and DEBUG_MODE:
+            self.Q_logs.put("Received %s from node at %s" % (data_tuple[0], addr))
+          
+          # pipe into uf via _add_extracted_url
+          url_pkg = (data_tuple[0], data_tuple[1], data_tuple[3])
+          self.uf._add_extracted_url(None, seed_dist, url_pkg, True)
 
-        # once data has been processed into url frontier, send confirmation
-        # NOTE: could be faster -> less cautious here...
-        self.Q_rcount.put(True)
-        c.sendto("success", (addr[0], CONFIRM_IN_PORT))
-        if self.Q_logs is not None and DEBUG_MODE:
-          self.Q_logs.put("Sent confirmation of reception of %s to node at %s" % (data_tuple[0], addr))
+          # once data has been processed into url frontier, send confirmation
+          # NOTE: could be faster -> less cautious here...
+          self.Q_rcount.put(True)
+          c.sendto("success", (addr[0], CONFIRM_IN_PORT))
+          if self.Q_logs is not None and DEBUG_MODE:
+            self.Q_logs.put("Sent confirmation of reception of %s to node at %s" % (data_tuple[0], addr))
+
+        # handle case of corrupted pickle
+        except ValueError as e:
+          c.sendto("failed", (addr[0], CONFIRM_IN_PORT))
+          if self.Q_logs is not None:
+            self.Q_logs.put("Sent failure of reception message to node at %s for error: %s" % (addr, e)) 
 
     except:
       handle_thread_exception(self.getName(), 'receive-thread', self.uf, self.Q_logs)
